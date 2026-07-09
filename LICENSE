@@ -1,0 +1,106 @@
+Fortress Power CSIP Sandbox License
+
+Copyright (c) 2026 Fortress Power, LLC. All rights reserved.
+
+This software is NOT open source. It is made available under the limited license
+set out below. If you do not accept these terms, you may not use the Software.
+
+1. DEFINITIONS
+
+   "Software" means the contents of this repository, including source code,
+   configuration, documentation, and the SunSpec point definitions distributed
+   herein, together with any updates Fortress makes available.
+
+   "Fortress" means Fortress Power, LLC.
+
+   "Fortress Systems" means Fortress cloud services, APIs, information-technology
+   systems, and Fortress-manufactured equipment.
+
+   "Permitted Purpose" means developing, testing, demonstrating, certifying, and
+   operating software that interoperates or integrates with Fortress Systems --
+   including building and operating an IEEE 2030.5 / CSIP server or client
+   intended to communicate with Fortress Systems.
+
+2. GRANT OF LICENSE
+
+   Subject to your compliance with this license, Fortress grants you a
+   non-exclusive, worldwide, royalty-free, non-transferable, non-sublicensable,
+   revocable license to:
+
+   (a) use, reproduce, and internally display the Software;
+   (b) modify the Software and create derivative works of it; and
+   (c) reproduce and distribute copies of the Software and of your derivative
+       works,
+
+   in each case SOLELY for the Permitted Purpose.
+
+3. CONDITIONS
+
+   (a) You must retain this license text and all copyright notices in every copy
+       or derivative work you distribute.
+   (b) You must clearly mark any file you have modified as changed from the
+       original.
+   (c) You must not represent your derivative work as an official Fortress
+       product or as certified, endorsed, or supported by Fortress.
+
+4. RESTRICTIONS
+
+   (a) You may not use the Software for any purpose other than the Permitted
+       Purpose. In particular, you may not use the Software to develop, market,
+       or operate a product or service that does not interoperate with Fortress
+       Systems.
+   (b) You may not remove, obscure, or alter any copyright, trademark, or
+       attribution notice.
+   (c) You may not sublicense, sell, rent, or lease the Software.
+
+5. TRADEMARKS
+
+   This license grants no rights in the Fortress Power name, the Fortress Power
+   logo (including the image file `fortress-logo.png` distributed with the
+   Software), or any other Fortress trademark, service mark, or trade dress.
+   Those marks remain the exclusive property of Fortress. If you distribute a
+   derivative work, you must remove the Fortress marks unless Fortress has given
+   you separate written permission to use them.
+
+6. THIRD-PARTY AND STANDARDS MATERIAL
+
+   The Software depends on third-party packages that are licensed separately by
+   their respective owners; nothing here alters those licenses.
+
+   IEEE Std 2030.5-2018 is copyrighted by the Institute of Electrical and
+   Electronics Engineers. The Common Smart Inverter Profile (CSIP) implementation
+   guide and conformance test procedures are copyrighted by the SunSpec Alliance.
+   Neither is distributed with the Software, and this license grants no rights in
+   either. You are responsible for obtaining those documents from their
+   publishers.
+
+7. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+   The Software is a SANDBOX intended for development and integration testing. It
+   performs no authentication, implements no transport security by default, and
+   must not be used to operate, control, or dispatch real distributed energy
+   resources or any equipment connected to an electrical grid.
+
+8. LIMITATION OF LIABILITY
+
+   IN NO EVENT SHALL FORTRESS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
+   OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.
+
+9. TERMINATION
+
+   This license terminates automatically if you breach any of its terms. Upon
+   termination you must cease all use of the Software and destroy all copies in
+   your possession. Sections 5 through 8 survive termination.
+
+10. GOVERNING LAW
+
+   This license is governed by the laws of the Commonwealth of Pennsylvania,
+   without regard to its conflict-of-laws provisions.
+
+For permissions beyond the scope of this license, contact Fortress Power.

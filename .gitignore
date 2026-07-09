@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.tsbuildinfo
+tls/
+# roborev snapshots
+/.roborev/
+.roborev.toml
+
+# superpowers brainstorm artifacts
+.superpowers/
+
+# local agent/editor config
+.mcp.json

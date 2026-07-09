@@ -1,0 +1,17 @@
+services:
+  example-server:
+    build: { context: ., dockerfile: packages/example-server/Dockerfile }
+    ports: ["7001:7001"]
+    environment: { PORT: "7001" }
+  client:
+    build: { context: ., dockerfile: packages/client/Dockerfile }
+    depends_on: [example-server]
+    ports: ["7100:7100"]
+    environment:
+      CSIP_SERVER_URL: "http://example-server:7001"
+      CSIP_CONTROL_POLL_SEC: "10"
+      CSIP_TELEMETRY_POST_SEC: "10"
+      CSIP_INSPECT_PORT: "7100"
+      # Standard CSIP reading-types + a Fortress extension point, so the loop demonstrates
+      # the vendor lane out of the box (fortress:soh on the wire).
+      CSIP_SUBSCRIPTION: "model101.W,model101.VAr,model101.Hz,model101.PhVphA,model40101.sohBat"

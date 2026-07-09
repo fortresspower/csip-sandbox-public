@@ -1,0 +1,135 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Fortress CSIP Sandbox — example-server API",
+    "version": "0.1.0",
+    "description": "The example-server exposes two surfaces:\n\n- **IEEE 2030.5 (XML)** — the real wire contract a partner's server must speak (`application/sep+xml`, namespace `urn:ieee:std:2030.5:ns`). The Fortress client polls/posts these.\n- **Sandbox admin `/test/*` (JSON)** — convenience endpoints for driving and inspecting the sandbox. **Not part of IEEE 2030.5** — they stand in for an aggregator's own control-origination and test tooling.\n\nSee `docs/telemetry-extension-strategy.md` and the in-app console (`GET /`) for context."
+  },
+  "servers": [{ "url": "/", "description": "this example-server" }],
+  "tags": [
+    { "name": "IEEE 2030.5", "description": "The standardized wire contract (XML)." },
+    { "name": "Sandbox admin", "description": "JSON convenience API under /test/* — not 2030.5." }
+  ],
+  "paths": {
+    "/dcap": {
+      "get": {
+        "tags": ["IEEE 2030.5"],
+        "summary": "DeviceCapability — minimal discovery root",
+        "responses": {
+          "200": {
+            "description": "DeviceCapability document",
+            "content": { "application/sep+xml": { "schema": { "type": "string" }, "example": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<DeviceCapability xmlns=\"urn:ieee:std:2030.5:ns\" href=\"/dcap\" pollRate=\"30\"><MirrorUsagePointListLink href=\"/mup\"/><EndDeviceListLink href=\"/edev\"/><TimeLink href=\"/tm\"/></DeviceCapability>" } }
+          }
+        }
+      }
+    },
+    "/derp/0/derc": {
+      "get": {
+        "tags": ["IEEE 2030.5"],
+        "summary": "Poll the DERControlList",
+        "description": "Returns the controls queued for the client and **drains** the queue (each control is served once).",
+        "responses": {
+          "200": {
+            "description": "DERControlList document",
+            "content": { "application/sep+xml": { "schema": { "type": "string" }, "example": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<DERControlList xmlns=\"urn:ieee:std:2030.5:ns\" all=\"1\" results=\"1\"><DERControl><mRID>DEMO</mRID><creationTime>0</creationTime><EventStatus><currentStatus>1</currentStatus></EventStatus><interval><start>0</start><duration>600</duration></interval><DERControlBase><opModFixedW>-3000</opModFixedW></DERControlBase></DERControl></DERControlList>" } }
+          }
+        }
+      }
+    },
+    "/mup/{m}": {
+      "post": {
+        "tags": ["IEEE 2030.5"],
+        "summary": "Post a MirrorMeterReadingList (canonical batch telemetry)",
+        "description": "The canonical form (IEEE 2030.5 §10.11.3(d)): all of an interval's readings in one POST to the MUP resource. The server unpacks the list and stores each reading. (A single MirrorMeterReading body is also accepted here.)",
+        "parameters": [{ "name": "m", "in": "path", "required": true, "schema": { "type": "string" }, "description": "MirrorUsagePoint index", "example": "0" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/sep+xml": { "schema": { "type": "string" }, "example": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MirrorMeterReadingList xmlns=\"urn:ieee:std:2030.5:ns\" all=\"2\" results=\"2\">\n  <MirrorMeterReading><mRID>model101W</mRID><description>model101.W</description><ReadingType><uom>38</uom><flowDirection>1</flowDirection><powerOfTenMultiplier>0</powerOfTenMultiplier></ReadingType><Reading><timePeriod><start>0</start><duration>0</duration></timePeriod><value>-3000</value></Reading></MirrorMeterReading>\n  <MirrorMeterReading><mRID>fortresscellNvoltage</mRID><description>model42111.vCellN</description><ReadingType><mRID>fortress:cell-N-voltage</mRID><uom>29</uom><powerOfTenMultiplier>-3</powerOfTenMultiplier></ReadingType><Reading><timePeriod><start>0</start><duration>0</duration></timePeriod><value>3200</value></Reading></MirrorMeterReading>\n</MirrorMeterReadingList>" } }
+        },
+        "responses": { "201": { "description": "Created", "headers": { "Location": { "schema": { "type": "string" } } } } }
+      }
+    },
+    "/mup/{m}/mr": {
+      "post": {
+        "tags": ["IEEE 2030.5"],
+        "summary": "Post a single MirrorMeterReading (compat form)",
+        "parameters": [{ "name": "m", "in": "path", "required": true, "schema": { "type": "string" }, "description": "MirrorUsagePoint index", "example": "0" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/sep+xml": { "schema": { "type": "string" }, "example": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MirrorMeterReading xmlns=\"urn:ieee:std:2030.5:ns\">\n  <mRID>model101W</mRID>\n  <description>model101.W</description>\n  <ReadingType>\n    <uom>38</uom>\n    <flowDirection>1</flowDirection>\n  </ReadingType>\n  <Reading>\n    <timePeriod><start>0</start><duration>0</duration></timePeriod>\n    <value>-3000</value>\n  </Reading>\n</MirrorMeterReading>" } }
+        },
+        "responses": { "201": { "description": "Created", "headers": { "Location": { "schema": { "type": "string" }, "description": "URI of the stored reading" } } } }
+      }
+    },
+    "/edev/0/der/0/ders": {
+      "put": {
+        "tags": ["IEEE 2030.5"],
+        "summary": "Put a DERStatus document",
+        "requestBody": { "required": true, "content": { "application/sep+xml": { "schema": { "type": "string" }, "example": "<?xml version=\"1.0\"?><DERStatus xmlns=\"urn:ieee:std:2030.5:ns\"><readingTime>0</readingTime><stateOfChargeStatus><value>5500</value></stateOfChargeStatus></DERStatus>" } } },
+        "responses": { "204": { "description": "No Content (stored)" } }
+      }
+    },
+    "/rsps": {
+      "post": {
+        "tags": ["IEEE 2030.5"],
+        "summary": "Post a DERControlResponse (ack)",
+        "requestBody": { "required": true, "content": { "application/sep+xml": { "schema": { "type": "string" }, "example": "<?xml version=\"1.0\"?><DERControlResponse xmlns=\"urn:ieee:std:2030.5:ns\"><createdDateTime>0</createdDateTime><status>2</status><subject>DEMO</subject></DERControlResponse>" } } },
+        "responses": { "201": { "description": "Created", "headers": { "Location": { "schema": { "type": "string" } } } } }
+      }
+    },
+    "/test/dercontrol": {
+      "post": {
+        "tags": ["Sandbox admin"],
+        "summary": "Inject (queue) a DERControl — sandbox control-origination",
+        "description": "Stands in for an aggregator's own control logic. **Not a 2030.5 message.** Queues a control the server then serves at GET /derp/0/derc.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/QueuedControl" }, "example": { "mRID": "DEMO", "opModFixedW": -3000 } } } },
+        "responses": {
+          "202": { "description": "Accepted (queued)" },
+          "400": { "description": "Missing mRID" }
+        }
+      }
+    },
+    "/test/controls": {
+      "get": { "tags": ["Sandbox admin"], "summary": "Peek pending controls (does not drain)", "responses": { "200": { "description": "Pending controls", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/QueuedControl" } } } } } } }
+    },
+    "/test/meter-readings": {
+      "get": { "tags": ["Sandbox admin"], "summary": "MirrorMeterReadings the server received", "responses": { "200": { "description": "Array of raw XML reading bodies", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "string" } } } } } } }
+    },
+    "/test/der-statuses": {
+      "get": { "tags": ["Sandbox admin"], "summary": "DERStatus documents the server received", "responses": { "200": { "description": "Array of raw XML status bodies", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "string" } } } } } } }
+    },
+    "/test/wire": {
+      "get": { "tags": ["Sandbox admin"], "summary": "Observed client↔server exchanges (wire log)", "responses": { "200": { "description": "Recent exchanges (ring buffer, max 300)", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/WireEntry" } } } } } } }
+    },
+    "/test/reset": {
+      "post": { "tags": ["Sandbox admin"], "summary": "Clear all in-memory stores", "responses": { "204": { "description": "No Content" } } }
+    }
+  },
+  "components": {
+    "schemas": {
+      "QueuedControl": {
+        "type": "object",
+        "required": ["mRID"],
+        "properties": {
+          "mRID": { "type": "string", "description": "Event id (required)", "example": "DEMO" },
+          "opModConnect": { "type": "boolean", "description": "BASIC-009 · connect/disconnect" },
+          "opModMaxLimW": { "type": "number", "description": "BASIC-010 · clamp max active power (W)" },
+          "opModFixedW": { "type": "number", "description": "BASIC-013/014 · signed setpoint (− discharge / + charge)" }
+        }
+      },
+      "WireEntry": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "ts": { "type": "integer", "description": "epoch ms" },
+          "dir": { "type": "string", "enum": ["poll", "post", "admin"] },
+          "method": { "type": "string" },
+          "path": { "type": "string" },
+          "status": { "type": "integer" },
+          "label": { "type": "string" },
+          "body": { "type": "string" }
+        }
+      }
+    }
+  }
+}

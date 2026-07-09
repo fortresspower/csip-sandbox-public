@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fortress CSIP Sandbox — API (Swagger UI)</title>
+<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui.css" />
+<style>
+  body { margin: 0; background: #fafbfa; }
+  .topnote { font: 14px/1.5 system-ui, sans-serif; color: #3B4642; background: #fff;
+    border-bottom: 1px solid #E4E8E6; padding: 12px 18px; }
+  .topnote b { color: #15201B; }
+  .topnote a { color: #1B9E4B; }
+</style>
+</head>
+<body>
+<div class="topnote">
+  <b>Fortress CSIP Sandbox API.</b>
+  The <b>IEEE 2030.5</b> endpoints are the real XML wire contract; the <b>Sandbox admin</b>
+  (<code>/test/*</code>) endpoints are JSON convenience tools, not 2030.5.
+  ← <a href="/">Back to the console</a>
+</div>
+<div id="swagger-ui"></div>
+<script src="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-bundle.js" crossorigin></script>
+<script>
+  window.ui = SwaggerUIBundle({
+    url: '/openapi.json',
+    dom_id: '#swagger-ui',
+    deepLinking: true,
+    tryItOutEnabled: true,
+    defaultModelsExpandDepth: 0,
+  });
+</script>
+</body>
+</html>

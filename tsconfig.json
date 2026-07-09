@@ -1,0 +1,1 @@
+{ "files": [], "references": [{ "path": "packages/protocol" }, { "path": "packages/client" }, { "path": "packages/example-server" }] }
