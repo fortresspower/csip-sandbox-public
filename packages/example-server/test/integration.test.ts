@@ -14,6 +14,19 @@ beforeAll(async () => {
 afterAll(() => server.close());
 
 describe('client <-> example-server loop', () => {
+  it('discovers the configured EndDevice assignment graph before using the existing control route', async () => {
+    const dcap = await (await fetch(base + '/dcap')).text();
+    expect(dcap).toContain('EndDeviceListLink');
+    const endDevices = await (await fetch(base + '/edev')).text();
+    expect(endDevices).toContain('href="/edev/0"');
+    const endDevice = await (await fetch(base + '/edev/0')).text();
+    expect(endDevice).toContain('href="/edev/0/fsa"');
+    const assignments = await (await fetch(base + '/edev/0/fsa/0/derp')).text();
+    expect(assignments).toContain('href="/derp/0"');
+    const program = await (await fetch(base + '/derp/0')).text();
+    expect(program).toContain('href="/derp/0/derc"');
+  });
+
   it('a dispatched discharge control moves posted telemetry', async () => {
     store.queueControl({ mRID: 'D1', opModFixedW: -3000 });
     const gen = new SyntheticGenerator({ lFDI: 'S', nameplateW: 5000, capacityWh: 13500, initialSoC: 50 });

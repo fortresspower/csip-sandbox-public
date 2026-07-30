@@ -1,20 +1,183 @@
-import { Router, type Request, type Response } from 'express';
+import {
+  Router,
+  type ErrorRequestHandler,
+  type NextFunction,
+  type Request,
+  type Response,
+} from 'express';
 import type { Store, QueuedControl } from './store.js';
-import { parseReadQuery, buildReadUrl, serializeMirrorMeterReadingListPage, parseMirrorMeterReadingList } from '@fortress-csip/protocol';
-import type { MirrorMeterReading } from '@fortress-csip/protocol';
+import {
+  buildReadUrl,
+  parseMirrorMeterReadingList,
+  parseReadQuery,
+  serializeDERProgram,
+  serializeDERProgramList,
+  serializeDeviceCapability,
+  serializeEndDevice,
+  serializeEndDeviceList,
+  serializeFunctionSetAssignments,
+  serializeFunctionSetAssignmentsList,
+  serializeMirrorMeterReadingListPage,
+} from '@fortress-csip/protocol';
+import type {
+  DERProgram,
+  EndDevice,
+  FunctionSetAssignments,
+  MirrorMeterReading,
+} from '@fortress-csip/protocol';
 import { synthSeries } from './backfill.js';
+import {
+  ProgramProjectionCatalog,
+  type AssignmentSourceV1,
+  type EndDeviceIdentity,
+} from './enrollment-source.js';
 
 const NS = 'urn:ieee:std:2030.5:ns';
 const xml = (s: string) => `<?xml version="1.0" encoding="UTF-8"?>\n${s}`;
+const POLL_RATE = 30;
 
-export function csipRouter(store: Store): Router {
+export interface EnrollmentProjectionOptions {
+  assignmentSource: AssignmentSourceV1;
+  programCatalog: ProgramProjectionCatalog;
+  onProjectionError: (error: Error) => void;
+}
+
+const asyncRoute = (
+  handler: (req: Request, res: Response) => Promise<void>,
+) => (req: Request, res: Response, next: NextFunction): void => {
+  void handler(req, res).catch(next);
+};
+
+const page = <T>(items: T[], req: Request, path: string) => {
+  const query = parseReadQuery(req.query as Record<string, string | string[] | undefined>);
+  const selected = items.slice(query.start, query.start + query.limit);
+  const nextStart = query.start + query.limit;
+  return {
+    href: path,
+    all: items.length,
+    results: selected.length,
+    pollRate: POLL_RATE,
+    items: selected,
+    ...(nextStart < items.length
+      ? { nextHref: `${path}?s=${nextStart}&l=${query.limit}` }
+      : {}),
+  };
+};
+
+const endDeviceResource = (identity: EndDeviceIdentity): EndDevice => ({
+  href: `/edev/${encodeURIComponent(identity.id)}`,
+  lFDI: identity.lFDI,
+  sFDI: identity.sFDI,
+  changedTime: identity.changedTime,
+  enabled: true,
+  FunctionSetAssignmentsListLink: {
+    href: `/edev/${encodeURIComponent(identity.id)}/fsa`,
+    all: 1,
+  },
+});
+
+const fsaResource = (
+  identity: EndDeviceIdentity,
+  programCount: number,
+): FunctionSetAssignments => ({
+  href: `/edev/${encodeURIComponent(identity.id)}/fsa/0`,
+  mRID: identity.fsaMRID,
+  DERProgramListLink: {
+    href: `/edev/${encodeURIComponent(identity.id)}/fsa/0/derp`,
+    all: programCount,
+  },
+  TimeLink: { href: '/tm' },
+});
+
+const methodNotAllowed = (_req: Request, res: Response): void => {
+  res.setHeader('Allow', 'GET');
+  res.status(405).end();
+};
+
+export function csipRouter(
+  store: Store,
+  enrollment: EnrollmentProjectionOptions,
+): Router {
   const r = Router();
-  r.get('/dcap', (_req, res) => send(res, xml(`<DeviceCapability xmlns="${NS}" href="/dcap" pollRate="30"><MirrorUsagePointListLink href="/mup"/><EndDeviceListLink href="/edev"/><TimeLink href="/tm"/></DeviceCapability>`)));
-  r.get('/derp/0/derc', (_req, res) => {
-    const controls = store.drainControls();
+  const assignedPrograms = async (identity: EndDeviceIdentity): Promise<DERProgram[]> => {
+    const snapshot = await enrollment.assignmentSource.getAssignmentSnapshot(identity.siteId);
+    if (snapshot.siteId !== identity.siteId) {
+      throw new Error('assignment source returned a different site');
+    }
+    return enrollment.programCatalog.resolve(snapshot.programProjectionKeys);
+  };
+  const identity = (id: string, res: Response): EndDeviceIdentity | undefined => {
+    const found = store.getEndDeviceIdentity(id);
+    if (found == null) res.status(404).end();
+    return found;
+  };
+
+  r.get('/dcap', (_req, res) => send(res, serializeDeviceCapability({
+    href: '/dcap',
+    pollRate: POLL_RATE,
+    MirrorUsagePointListLink: { href: '/mup' },
+    EndDeviceListLink: { href: '/edev', all: store.listEndDeviceIdentities().length },
+    TimeLink: { href: '/tm' },
+  })));
+  r.get('/edev', (req, res) => {
+    const devices = store.listEndDeviceIdentities()
+      .sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true }))
+      .map(endDeviceResource);
+    send(res, serializeEndDeviceList(page(devices, req, '/edev')));
+  });
+  r.all('/edev', methodNotAllowed);
+  r.get('/edev/:deviceId', (req, res) => {
+    const device = identity(req.params.deviceId, res);
+    if (device != null) send(res, serializeEndDevice(endDeviceResource(device)));
+  });
+  r.all('/edev/:deviceId', methodNotAllowed);
+  r.get('/edev/:deviceId/fsa', asyncRoute(async (req, res) => {
+    const device = identity(req.params.deviceId, res);
+    if (device == null) return;
+    const programs = await assignedPrograms(device);
+    send(res, serializeFunctionSetAssignmentsList(page(
+      [fsaResource(device, programs.length)],
+      req,
+      `/edev/${encodeURIComponent(device.id)}/fsa`,
+    )));
+  }));
+  r.all('/edev/:deviceId/fsa', methodNotAllowed);
+  r.get('/edev/:deviceId/fsa/:fsaId', asyncRoute(async (req, res) => {
+    const device = identity(req.params.deviceId, res);
+    if (device == null) return;
+    if (req.params.fsaId !== '0') {
+      res.status(404).end();
+      return;
+    }
+    const programs = await assignedPrograms(device);
+    send(res, serializeFunctionSetAssignments(fsaResource(device, programs.length)));
+  }));
+  r.all('/edev/:deviceId/fsa/:fsaId', methodNotAllowed);
+  r.get('/edev/:deviceId/fsa/:fsaId/derp', asyncRoute(async (req, res) => {
+    const device = identity(req.params.deviceId, res);
+    if (device == null) return;
+    if (req.params.fsaId !== '0') {
+      res.status(404).end();
+      return;
+    }
+    const path = `/edev/${encodeURIComponent(device.id)}/fsa/0/derp`;
+    send(res, serializeDERProgramList(page(await assignedPrograms(device), req, path)));
+  }));
+  r.all('/edev/:deviceId/fsa/:fsaId/derp', methodNotAllowed);
+  r.get('/derp/:programId', (req, res) => {
+    const program = enrollment.programCatalog.get(req.params.programId);
+    if (program == null) {
+      res.status(404).end();
+      return;
+    }
+    send(res, serializeDERProgram(program));
+  });
+  r.all('/derp/:programId', methodNotAllowed);
+  r.get('/derp/:programId/derc', (req, res) => {
+    const controls = store.drainControls(req.params.programId);
     const items = controls.map(controlXml).join('');
     const body = xml(`<DERControlList xmlns="${NS}" all="${controls.length}" results="${controls.length}">${items}</DERControlList>`);
-    store.logWire({ dir: 'poll', method: 'GET', path: '/derp/0/derc', status: 200, label: `DERControlList · ${controls.length} control(s)`, body });
+    store.logWire({ dir: 'poll', method: 'GET', path: req.path, status: 200, label: `DERControlList · ${controls.length} control(s)`, body });
     send(res, body);
   });
   // Canonical telemetry read (§4.6.2): paginated MirrorMeterReadingList. Same endpoint serves
@@ -78,6 +241,12 @@ export function csipRouter(store: Store): Router {
     store.logWire({ dir: 'post', method: 'POST', path: '/rsps', status: 201, label: 'DERControlResponse ack', body: bodyText(req) });
     res.status(201).setHeader('Location', '/rsps/0').end();
   });
+  const projectionError: ErrorRequestHandler = (error: unknown, _req, res, _next) => {
+    const normalized = error instanceof Error ? error : new Error('assignment projection failed');
+    enrollment.onProjectionError(normalized);
+    res.status(503).type('text/plain').send('Enrollment projection unavailable');
+  };
+  r.use(projectionError);
   return r;
 }
 function controlXml(c: QueuedControl): string {

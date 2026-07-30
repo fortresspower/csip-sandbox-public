@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package fortress.manager.vpp.enrollment;
+
+// Consumer-pinned v1 subset of manager-vppEnrollment's public contract.
+message CallerContext {
+  string request_id = 1;
+  string principal_id = 2;
+  string actor = 3;
+}
+
+message SiteSelector {
+  optional string site_id = 1;
+  optional string gateway_sn = 2;
+}
+
+message GetAssignmentSnapshotRequest {
+  CallerContext caller = 1;
+  SiteSelector site = 2;
+}
+
+message AssignmentSnapshot {
+  string site_id = 1;
+  string snapshot_version = 2;
+  string as_of = 3;
+  repeated string program_projection_keys = 4;
+}
+
+message GetAssignmentSnapshotResponse {
+  AssignmentSnapshot snapshot = 1;
+}
+
+service VppEnrollment {
+  rpc GetAssignmentSnapshot(GetAssignmentSnapshotRequest) returns (GetAssignmentSnapshotResponse);
+}

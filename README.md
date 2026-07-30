@@ -12,7 +12,8 @@ correct Fortress **client** before Fortress's real backend exists:
    telemetry) is faked; there is no real database, no managers, no gRPC. **The client's
    behavior is the contract.**
 2. **A hollow-but-correct example server** — a target so the loop runs end-to-end with no
-   partner code, and a forkable starting point for a partner's own server.
+   partner code, and a forkable starting point for a partner's own server. It includes a
+   read-only EndDevice → FunctionSetAssignments → DERProgram enrollment projection.
 
 Everything serializes through one shared `protocol` package, so the client and the example
 server **cannot drift** from each other or from the wire contract.
@@ -146,6 +147,8 @@ intentionally lenient validation so exploratory payloads don't need to be fully 
 scaffold and so a future/your-own client can exercise the rest of the surface:
 
 - `GET /dcap` — minimal discovery (`DeviceCapability`).
+- `GET /edev` → `/edev/{id}/fsa` → `/edev/{id}/fsa/{id}/derp` — the read-only,
+  paged program-assignment graph for each provisioned EndDevice identity.
 - `PUT /edev/0/der/0/ders` — a `DERStatus` route (operational state / connection / SoC).
 
 ### Not yet wired in v1
@@ -153,8 +156,8 @@ scaffold and so a future/your-own client can exercise the rest of the surface:
 The sandbox is the **telemetry + control happy path**. These are deliberately deferred (the
 example server already has the routes; the v1 client just doesn't drive them yet):
 
-- **`dcap`→`FunctionSetAssignments`→`DERProgram` discovery** — the client uses fixed hrefs
-  instead of walking the discovery chain.
+- **Walking `dcap`→`FunctionSetAssignments`→`DERProgram` in the bundled client** — the
+  server publishes the complete graph, but the client still uses fixed hrefs.
 - **`MirrorUsagePoint` registration** (`GET /mup` → `POST` a MUP → store the returned mRID)
   — the client posts to a fixed `/mup/0`.
 - **`DERStatus` reporting, including State-of-Charge.** `model802.SoC` is in the default
@@ -183,6 +186,46 @@ CSIP BASIC inverter-control matrix):
 **Client inspection** — `GET /status` returns the current synthetic snapshot, the last
 control applied, and the last telemetry-post timestamp, so you can see the client working
 without reading XML off the wire.
+
+---
+
+## Enrollment assignment projection
+
+IEEE 2030.5 does not define Fortress's enrollment workflow or enrollment stages. The sandbox
+therefore treats program membership as Fortress-owned data and publishes only its operational
+result through the standard resource relationship:
+
+```text
+/dcap
+  -> /edev
+  -> /edev/{end-device}/fsa
+  -> /edev/{end-device}/fsa/{fsa}/derp
+  -> /derp/{program}
+```
+
+EndDevice identity is provisioned independently in the server's identity store. Enrollment
+snapshots contain only stable program projection keys, so activating or disabling membership
+changes the DERProgram list without replacing the EndDevice's LFDI or SFDI. Assignment and
+identity resources accept `GET` only; client `POST`, `PUT`, or `DELETE` requests receive
+`405 Method Not Allowed`.
+
+By default, the example server uses deterministic fixtures for site `1001` and two demo
+programs. To read live operational assignments from `manager-vppEnrollment`, configure:
+
+| Variable | Meaning |
+|---|---|
+| `FORTRESS_ENROLLMENT_ADDRESS` | gRPC address; when absent, use fixture assignments |
+| `FORTRESS_ENROLLMENT_PRINCIPAL_ID` | authorized sandbox service principal |
+| `FORTRESS_ENROLLMENT_ACTOR` | audit actor sent in the v1 request |
+| `FORTRESS_ENROLLMENT_SERVICE_TOKEN` | bearer credential on the service-to-service call |
+| `FORTRESS_ENROLLMENT_ALLOW_INSECURE` | explicit `true` only for trusted local plaintext gRPC; TLS is the default |
+
+The adapter consumes a pinned v1 subset of the manager's assignment snapshot contract. A
+snapshot is applied completely: an unknown program projection key or malformed/cross-site
+response returns `503` instead of exposing a partial assignment list.
+
+> This is an IEEE 2030.5-shaped sandbox projection. It is not a CSIP conformance claim, and
+> the sandbox still does not authenticate 2030.5 clients or enforce per-device ACLs.
 
 ---
 
@@ -255,13 +298,14 @@ server; the client talks to whatever `CSIP_SERVER_URL` points at.
 
 ## Scope
 
-In scope (v1): the **telemetry + control happy path** — minimal discovery, `MirrorUsagePoint`
+In scope (v1): the **telemetry + control happy path** plus read-only operational membership
+projection — minimal discovery, EndDevice/FSA/DERProgram assignment reads, `MirrorUsagePoint`
 telemetry, `DERStatus`/`DERCapability`, and `DERControl` poll/apply/respond with a closed
 feedback loop.
 
-Out of scope (v1): EndDevice/PIN registration, the Subscription/Notification function set,
-mTLS enforcement, server-side aggregator conformance, and the full BASIC inverter-control
-matrix.
+Out of scope (v1): EndDevice/PIN registration, enrollment writes over IEEE 2030.5, the
+Subscription/Notification function set, 2030.5 client mTLS identity and per-device ACLs,
+server-side aggregator conformance, and the full BASIC inverter-control matrix.
 
 ---
 

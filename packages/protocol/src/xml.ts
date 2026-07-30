@@ -1,5 +1,20 @@
 import { XMLBuilder, XMLParser } from 'fast-xml-parser';
-import type { DERControl, MirrorMeterReading, Sep2List, MirrorMeterReadingListPage, ParsedReadingPage } from './resources.js';
+import type {
+  DERControl,
+  DERProgram,
+  DERProgramListPage,
+  DeviceCapability,
+  EndDevice,
+  EndDeviceListPage,
+  FunctionSetAssignments,
+  FunctionSetAssignmentsListPage,
+  Link,
+  ListLink,
+  MirrorMeterReading,
+  MirrorMeterReadingListPage,
+  ParsedReadingPage,
+  Sep2List,
+} from './resources.js';
 
 const NS = 'urn:ieee:std:2030.5:ns';
 const builder = new XMLBuilder({ ignoreAttributes: false, format: true, suppressEmptyNode: true });
@@ -13,6 +28,117 @@ const parser = new XMLParser({
   parseTagValue: true,
   tagValueProcessor: (tagName: string, val: string) => (tagName === 'mRID' ? String(val) : undefined),
 });
+
+const document = (root: Record<string, unknown>): string => (
+  `<?xml version="1.0" encoding="UTF-8"?>\n${builder.build(root)}`
+);
+
+const linkInner = (link: Link | ListLink) => ({
+  '@_href': link.href,
+  ...('all' in link && link.all !== undefined ? { '@_all': link.all } : {}),
+});
+
+const endDeviceInner = (device: EndDevice) => ({
+  '@_href': device.href,
+  lFDI: device.lFDI,
+  sFDI: device.sFDI,
+  changedTime: device.changedTime,
+  enabled: device.enabled,
+  FunctionSetAssignmentsListLink: linkInner(device.FunctionSetAssignmentsListLink),
+});
+
+const functionSetAssignmentsInner = (assignments: FunctionSetAssignments) => ({
+  '@_href': assignments.href,
+  DERProgramListLink: linkInner(assignments.DERProgramListLink),
+  TimeLink: linkInner(assignments.TimeLink),
+  mRID: assignments.mRID,
+});
+
+const derProgramInner = (program: DERProgram) => ({
+  '@_href': program.href,
+  mRID: program.mRID,
+  DERControlListLink: linkInner(program.DERControlListLink),
+  primacy: program.primacy,
+});
+
+const listInner = <T>(
+  page: {
+    href: string;
+    all: number;
+    results: number;
+    pollRate: number;
+    nextHref?: string;
+    items: T[];
+  },
+  itemName: string,
+  item: (value: T) => Record<string, unknown>,
+) => ({
+  '@_xmlns': NS,
+  '@_href': page.href,
+  '@_all': page.all,
+  '@_results': page.results,
+  '@_pollRate': page.pollRate,
+  ...(page.nextHref ? { Link: { '@_rel': 'next', '@_href': page.nextHref } } : {}),
+  [itemName]: page.items.map(item),
+});
+
+export function serializeDeviceCapability(capability: DeviceCapability): string {
+  return document({
+    DeviceCapability: {
+      '@_xmlns': NS,
+      '@_href': capability.href,
+      '@_pollRate': capability.pollRate,
+      ...(capability.TimeLink ? { TimeLink: linkInner(capability.TimeLink) } : {}),
+      ...(capability.EndDeviceListLink
+        ? { EndDeviceListLink: linkInner(capability.EndDeviceListLink) }
+        : {}),
+      ...(capability.MirrorUsagePointListLink
+        ? { MirrorUsagePointListLink: linkInner(capability.MirrorUsagePointListLink) }
+        : {}),
+    },
+  });
+}
+
+export function serializeEndDevice(device: EndDevice): string {
+  return document({ EndDevice: { '@_xmlns': NS, ...endDeviceInner(device) } });
+}
+
+export function serializeEndDeviceList(page: EndDeviceListPage): string {
+  return document({
+    EndDeviceList: listInner(page, 'EndDevice', endDeviceInner),
+  });
+}
+
+export function serializeFunctionSetAssignments(assignments: FunctionSetAssignments): string {
+  return document({
+    FunctionSetAssignments: {
+      '@_xmlns': NS,
+      ...functionSetAssignmentsInner(assignments),
+    },
+  });
+}
+
+export function serializeFunctionSetAssignmentsList(
+  page: FunctionSetAssignmentsListPage,
+): string {
+  return document({
+    FunctionSetAssignmentsList: listInner(
+      page,
+      'FunctionSetAssignments',
+      functionSetAssignmentsInner,
+    ),
+  });
+}
+
+export function serializeDERProgram(program: DERProgram): string {
+  return document({ DERProgram: { '@_xmlns': NS, ...derProgramInner(program) } });
+}
+
+export function serializeDERProgramList(page: DERProgramListPage): string {
+  return document({
+    DERProgramList: listInner(page, 'DERProgram', derProgramInner),
+  });
+}
 
 /** The inner MirrorMeterReading object (no namespace) — shared by the single + list serializers. */
 function mmrInner(m: MirrorMeterReading) {
@@ -32,7 +158,7 @@ function mmrInner(m: MirrorMeterReading) {
 
 export function serializeMirrorMeterReading(m: MirrorMeterReading): string {
   const obj = { MirrorMeterReading: { '@_xmlns': NS, ...mmrInner(m) } };
-  return `<?xml version="1.0" encoding="UTF-8"?>\n` + builder.build(obj);
+  return document(obj);
 }
 
 /** Canonical batch form (IEEE 2030.5 §10.11.3(d)): all of an interval's readings in one POST. */
@@ -45,7 +171,7 @@ export function serializeMirrorMeterReadingList(items: MirrorMeterReading[]): st
       MirrorMeterReading: items.map(mmrInner),
     },
   };
-  return `<?xml version="1.0" encoding="UTF-8"?>\n` + builder.build(obj);
+  return document(obj);
 }
 
 export function parseDERControlList(xml: string): Sep2List<DERControl> {
@@ -76,7 +202,7 @@ export function serializeMirrorMeterReadingListPage(p: MirrorMeterReadingListPag
       MirrorMeterReading: p.items.map(mmrInner),
     },
   };
-  return `<?xml version="1.0" encoding="UTF-8"?>\n` + builder.build(obj);
+  return document(obj);
 }
 
 const readParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', parseTagValue: true,

@@ -1,9 +1,23 @@
 import express from 'express';
 import { fileURLToPath } from 'node:url';
+import { credentials } from '@grpc/grpc-js';
 import { Store } from './store.js';
 import { csipRouter } from './routes.js';
 import { adminRouter } from './admin.js';
 import { seedBackfill } from './backfill.js';
+import {
+  DEFAULT_END_DEVICES,
+  DEFAULT_PROGRAM_PROJECTIONS,
+  ProgramProjectionCatalog,
+  makeDefaultFixtureEnrollmentSource,
+  type AssignmentSourceV1,
+  type EndDeviceIdentity,
+  type ProgramProjection,
+} from './enrollment-source.js';
+import {
+  FortressEnrollmentSourceV1,
+  makeGrpcAssignmentSnapshotRpcV1,
+} from './fortress-enrollment-client.js';
 
 /** Permissive CORS so the browser console (and partner tools) can call the admin/2030.5
  *  API and the client /status from any origin. This is a dev sandbox, not production. */
@@ -16,10 +30,44 @@ function cors(_req: express.Request, res: express.Response, next: express.NextFu
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public', import.meta.url));
 
-export function makeApp(opts: { admin?: boolean; console?: boolean } = {}) {
+const enrollmentSourceFromEnvironment = (): AssignmentSourceV1 => {
+  const address = process.env.FORTRESS_ENROLLMENT_ADDRESS;
+  if (address == null || address === '') return makeDefaultFixtureEnrollmentSource();
+  const principalId = process.env.FORTRESS_ENROLLMENT_PRINCIPAL_ID;
+  const actor = process.env.FORTRESS_ENROLLMENT_ACTOR;
+  const serviceToken = process.env.FORTRESS_ENROLLMENT_SERVICE_TOKEN;
+  if (!principalId || !actor || !serviceToken) {
+    throw new Error('Fortress enrollment client configuration is incomplete');
+  }
+  const allowInsecure = process.env.FORTRESS_ENROLLMENT_ALLOW_INSECURE === 'true';
+  const rpc = makeGrpcAssignmentSnapshotRpcV1({
+    address,
+    credentials: allowInsecure ? credentials.createInsecure() : credentials.createSsl(),
+  });
+  return new FortressEnrollmentSourceV1(rpc, {
+    principalId,
+    actor,
+    serviceToken,
+  });
+};
+
+export interface AppOptions {
+  admin?: boolean;
+  console?: boolean;
+  assignmentSource?: AssignmentSourceV1;
+  endDevices?: EndDeviceIdentity[];
+  programProjections?: ProgramProjection[];
+  onProjectionError?: (error: Error) => void;
+}
+
+export function makeApp(opts: AppOptions = {}) {
   const admin = opts.admin ?? process.env.NODE_ENV !== 'production';
   const serveConsole = opts.console ?? true;
-  const store = new Store();
+  const store = new Store(opts.endDevices ?? DEFAULT_END_DEVICES);
+  const assignmentSource = opts.assignmentSource ?? enrollmentSourceFromEnvironment();
+  const programCatalog = new ProgramProjectionCatalog(
+    opts.programProjections ?? DEFAULT_PROGRAM_PROJECTIONS,
+  );
   seedBackfill(store, { now: Math.floor(Date.now() / 1000) });
   const app = express();
   app.use(cors);
@@ -33,8 +81,14 @@ export function makeApp(opts: { admin?: boolean; console?: boolean } = {}) {
     app.use(express.static(PUBLIC_DIR, { setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') }));
   }
   if (admin) app.use(adminRouter(store));
-  app.use(csipRouter(store));
-  return { app, store };
+  app.use(csipRouter(store, {
+    assignmentSource,
+    programCatalog,
+    onProjectionError: opts.onProjectionError ?? ((error) => {
+      console.error(`[enrollment-projection] ${error.name}`);
+    }),
+  }));
+  return { app, store, assignmentSource };
 }
 
 if (process.env.NODE_ENV !== 'test') {
