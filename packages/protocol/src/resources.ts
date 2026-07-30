@@ -1,20 +1,49 @@
 import type { UomCode } from './uom.js';
 
 export interface Sep2List<T> { all: number; results: number; items: T[]; }
+export interface Sep2ListPage<T> extends Sep2List<T> {
+  href: string;
+  pollRate: number;
+  nextHref?: string;
+}
+
+export interface Link { href: string; }
+export interface ListLink extends Link { all?: number; }
 
 export interface DeviceCapability {
+  href: string;
   pollRate: number;
-  EndDeviceListLink?: string;
-  MirrorUsagePointListLink?: string;
-  TimeLink?: string;
+  EndDeviceListLink?: ListLink;
+  MirrorUsagePointListLink?: ListLink;
+  TimeLink?: Link;
+}
+
+export interface EndDevice {
+  href: string;
+  lFDI: string;
+  sFDI: string;
+  changedTime: number;
+  enabled: boolean;
+  FunctionSetAssignmentsListLink: ListLink;
 }
 
 export interface FunctionSetAssignments {
+  href: string;
   mRID: string;
-  DERProgramListLink?: string;
+  DERProgramListLink: ListLink;
+  TimeLink: Link;
 }
 
-export interface DERProgram { mRID: string; primacy: number; DERControlListLink?: string; }
+export interface DERProgram {
+  href: string;
+  mRID: string;
+  primacy: number;
+  DERControlListLink: Link;
+}
+
+export type EndDeviceListPage = Sep2ListPage<EndDevice>;
+export type FunctionSetAssignmentsListPage = Sep2ListPage<FunctionSetAssignments>;
+export type DERProgramListPage = Sep2ListPage<DERProgram>;
 
 /** v1 control modes only — connect/disconnect, max active power limit, fixed W setpoint. */
 export interface DERControlBase {

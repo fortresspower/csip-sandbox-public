@@ -1,5 +1,8 @@
+import type { EndDeviceIdentity } from './enrollment-source.js';
+
 export interface QueuedControl {
   mRID: string;
+  programId?: string;
   opModConnect?: boolean;
   opModMaxLimW?: number;
   opModFixedW?: number;
@@ -27,13 +30,26 @@ export class Store {
   private wireId = 0;
   private readings: StoredReading[] = [];
 
+  constructor(private readonly endDevices: EndDeviceIdentity[] = []) {}
+
   addMeterReading(xml: string) { this.mr.push(xml); }
   meterReadings() { return this.mr; }
   addDerStatus(xml: string) { this.der.push(xml); }
   derStatuses() { return this.der; }
   queueControl(c: QueuedControl) { this.ctrl.push(c); }
   controls() { return this.ctrl; }
-  drainControls() { const out = this.ctrl; this.ctrl = []; return out; }
+  drainControls(programId = '0') {
+    const out = this.ctrl.filter(control => (control.programId ?? '0') === programId);
+    this.ctrl = this.ctrl.filter(control => (control.programId ?? '0') !== programId);
+    return out;
+  }
+  listEndDeviceIdentities() {
+    return this.endDevices.map(device => ({ ...device }));
+  }
+  getEndDeviceIdentity(id: string) {
+    const device = this.endDevices.find(candidate => candidate.id === id);
+    return device == null ? undefined : { ...device };
+  }
 
   addReading(r: StoredReading) { this.readings.push(r); }
 

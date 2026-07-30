@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Fortress CSIP Sandbox — example-server API",
-    "version": "0.1.0",
-    "description": "The example-server exposes two surfaces:\n\n- **IEEE 2030.5 (XML)** — the real wire contract a partner's server must speak (`application/sep+xml`, namespace `urn:ieee:std:2030.5:ns`). The Fortress client polls/posts these.\n- **Sandbox admin `/test/*` (JSON)** — convenience endpoints for driving and inspecting the sandbox. **Not part of IEEE 2030.5** — they stand in for an aggregator's own control-origination and test tooling.\n\nSee `docs/telemetry-extension-strategy.md` and the in-app console (`GET /`) for context."
+    "version": "0.2.0",
+    "description": "The example-server exposes two surfaces:\n\n- **IEEE 2030.5 (XML)** — the real wire contract a partner's server must speak (`application/sep+xml`, namespace `urn:ieee:std:2030.5:ns`). The Fortress client polls/posts these. The EndDevice/FSA/DERProgram graph is a read-only, standard-shaped sandbox projection, not a CSIP conformance claim.\n- **Sandbox admin `/test/*` (JSON)** — convenience endpoints for driving and inspecting the sandbox. **Not part of IEEE 2030.5** — they stand in for an aggregator's own control-origination and test tooling.\n\nSee `docs/telemetry-extension-strategy.md` and the in-app console (`GET /`) for context."
   },
   "servers": [{ "url": "/", "description": "this example-server" }],
   "tags": [
@@ -18,8 +18,95 @@
         "responses": {
           "200": {
             "description": "DeviceCapability document",
-            "content": { "application/sep+xml": { "schema": { "type": "string" }, "example": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<DeviceCapability xmlns=\"urn:ieee:std:2030.5:ns\" href=\"/dcap\" pollRate=\"30\"><MirrorUsagePointListLink href=\"/mup\"/><EndDeviceListLink href=\"/edev\"/><TimeLink href=\"/tm\"/></DeviceCapability>" } }
+            "content": { "application/sep+xml": { "schema": { "type": "string" }, "example": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<DeviceCapability xmlns=\"urn:ieee:std:2030.5:ns\" href=\"/dcap\" pollRate=\"30\"><TimeLink href=\"/tm\"/><EndDeviceListLink href=\"/edev\" all=\"1\"/><MirrorUsagePointListLink href=\"/mup\"/></DeviceCapability>" } }
           }
+        }
+      }
+    },
+    "/edev": {
+      "get": {
+        "tags": ["IEEE 2030.5"],
+        "summary": "List provisioned EndDevice identities",
+        "description": "Read-only, deterministically ordered EndDeviceList. Supports `s` (start) and `l` (limit) paging.",
+        "parameters": [
+          { "name": "s", "in": "query", "schema": { "type": "integer", "minimum": 0, "default": 0 } },
+          { "name": "l", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 } }
+        ],
+        "responses": {
+          "200": { "description": "EndDeviceList document", "content": { "application/sep+xml": { "schema": { "type": "string" } } } },
+          "405": { "description": "Identity and assignments are read-only" }
+        }
+      }
+    },
+    "/edev/{edev}": {
+      "get": {
+        "tags": ["IEEE 2030.5"],
+        "summary": "Read one provisioned EndDevice identity",
+        "parameters": [{ "name": "edev", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "EndDevice document", "content": { "application/sep+xml": { "schema": { "type": "string" } } } },
+          "404": { "description": "Unknown EndDevice" },
+          "405": { "description": "Identity and assignments are read-only" }
+        }
+      }
+    },
+    "/edev/{edev}/fsa": {
+      "get": {
+        "tags": ["IEEE 2030.5"],
+        "summary": "List FunctionSetAssignments for an EndDevice",
+        "parameters": [{ "name": "edev", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "FunctionSetAssignmentsList document", "content": { "application/sep+xml": { "schema": { "type": "string" } } } },
+          "404": { "description": "Unknown EndDevice" },
+          "503": { "description": "Fortress assignment projection unavailable or unmapped" },
+          "405": { "description": "Identity and assignments are read-only" }
+        }
+      }
+    },
+    "/edev/{edev}/fsa/{fsa}": {
+      "get": {
+        "tags": ["IEEE 2030.5"],
+        "summary": "Read one FunctionSetAssignments resource",
+        "parameters": [
+          { "name": "edev", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "fsa", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "FunctionSetAssignments document", "content": { "application/sep+xml": { "schema": { "type": "string" } } } },
+          "404": { "description": "Unknown EndDevice or FSA" },
+          "503": { "description": "Fortress assignment projection unavailable or unmapped" },
+          "405": { "description": "Identity and assignments are read-only" }
+        }
+      }
+    },
+    "/edev/{edev}/fsa/{fsa}/derp": {
+      "get": {
+        "tags": ["IEEE 2030.5"],
+        "summary": "List the EndDevice's active DERProgram assignments",
+        "description": "Reads one complete Fortress assignment snapshot, maps stable projection keys, and fails the whole response if any key is unknown. Supports `s` and `l` paging.",
+        "parameters": [
+          { "name": "edev", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "fsa", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "s", "in": "query", "schema": { "type": "integer", "minimum": 0, "default": 0 } },
+          { "name": "l", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 } }
+        ],
+        "responses": {
+          "200": { "description": "DERProgramList document", "content": { "application/sep+xml": { "schema": { "type": "string" } } } },
+          "404": { "description": "Unknown EndDevice or FSA" },
+          "503": { "description": "Fortress assignment projection unavailable or unmapped" },
+          "405": { "description": "Identity and assignments are read-only" }
+        }
+      }
+    },
+    "/derp/{program}": {
+      "get": {
+        "tags": ["IEEE 2030.5"],
+        "summary": "Read one projected DERProgram",
+        "parameters": [{ "name": "program", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "DERProgram document", "content": { "application/sep+xml": { "schema": { "type": "string" } } } },
+          "404": { "description": "Unknown DERProgram projection" },
+          "405": { "description": "Identity and assignments are read-only" }
         }
       }
     },

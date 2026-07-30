@@ -46,6 +46,7 @@ describe('partner console (static + CORS)', () => {
     expect(spec.openapi).toMatch(/^3\./);
     expect(spec.paths['/test/dercontrol']).toBeDefined();
     expect(spec.paths['/derp/0/derc']).toBeDefined();
+    expect(spec.paths['/edev/{edev}/fsa/{fsa}/derp']).toBeDefined();
   });
 
   it('serves Swagger UI at /docs.html and redirects /docs to it', async () => {

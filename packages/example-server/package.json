@@ -2,6 +2,11 @@
   "name": "@fortress-csip/example-server",
   "version": "0.0.0",
   "type": "module",
-  "dependencies": { "@fortress-csip/protocol": "0.0.0", "express": "^4.21.0" },
+  "dependencies": {
+    "@fortress-csip/protocol": "0.0.0",
+    "@grpc/grpc-js": "1.14.4",
+    "@grpc/proto-loader": "0.8.1",
+    "express": "^4.21.0"
+  },
   "devDependencies": { "@fortress-csip/client": "0.0.0", "@types/express": "^4.17.21", "supertest": "^7.0.0", "@types/supertest": "^6.0.2" }
 }

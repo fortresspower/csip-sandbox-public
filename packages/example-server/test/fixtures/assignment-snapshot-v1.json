@@ -1,0 +1,9 @@
+{
+  "siteId": "1001",
+  "snapshotVersion": "d3d63aa32d023816ea626ae5556a7aa98b97ab3b12f86a612ac3e9447ad0cf25",
+  "asOf": "2026-07-30T16:00:00.000Z",
+  "programProjectionKeys": [
+    "fortress-program-1",
+    "fortress-program-2"
+  ]
+}

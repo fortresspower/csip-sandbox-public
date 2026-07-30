@@ -11,6 +11,9 @@
     "demo": "bash scripts/demo-loop.sh",
     "gen:catalog": "node scripts/gen-catalog.mjs"
   },
+  "overrides": {
+    "body-parser": "1.20.6"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
