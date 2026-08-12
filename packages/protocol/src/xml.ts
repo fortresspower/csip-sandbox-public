@@ -61,7 +61,11 @@ function parseRoot(xml: string, rootName: string, options: XmlParseOptions = {})
   }
 
   const document = parser.parse(xml) as RawRecord;
-  return asRecord(singleton(document[rootName], rootName, true), rootName);
+  const root = asRecord(singleton(document[rootName], rootName, true), rootName);
+  if (scalarString(root['@_xmlns'], 'xmlns') !== NS) {
+    throw new Error(`${rootName} must use the IEEE 2030.5 XML namespace`);
+  }
+  return root;
 }
 
 function asRecord(value: unknown, field: string): RawRecord {

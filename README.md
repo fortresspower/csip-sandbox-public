@@ -263,13 +263,15 @@ a non-sensitive health check.
 
 ## Scope
 
-In scope (v1): the **telemetry + control happy path** — minimal discovery, `MirrorUsagePoint`
-telemetry, `DERStatus`/`DERCapability`, and `DERControl` poll/apply/respond with a closed
-feedback loop.
+In scope (v1): the **partner polling loop** — certificate-derived aggregator identity,
+in-band `EndDevice` registration, assignment discovery, `MirrorUsagePoint` telemetry,
+`DERStatus`/`DERCapability`, and `DERControl` poll/apply/respond with a closed feedback loop.
+The production-shaped example server provides durable state and an allowlisted identity adapter
+for a trusted mTLS terminator; the public client requires mTLS for every deployed connection.
 
-Out of scope (v1): EndDevice/PIN registration, the Subscription/Notification function set,
-mTLS enforcement, server-side aggregator conformance, and the full BASIC inverter-control
-matrix.
+Out of scope (v1): PIN-based enrollment, the Subscription/Notification function set, public-cloud
+deployment and PKI operation, and the full BASIC inverter-control matrix. TLS termination and the
+private operator channel remain deployment responsibilities, not public sandbox infrastructure.
 
 ---
 

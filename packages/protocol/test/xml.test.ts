@@ -154,13 +154,13 @@ describe('xml', () => {
     expect(() => parseDeviceCapability('<!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><DeviceCapability/>'))
       .toThrow(/DTD|entity/i);
 
-    expect(() => parseDERControlList(`<DERControlList>
+    expect(() => parseDERControlList(`<DERControlList xmlns="urn:ieee:std:2030.5:ns">
       <DERControl><mRID>A</mRID><creationTime>not-a-number</creationTime>
         <EventStatus><currentStatus>1</currentStatus></EventStatus>
         <interval><start>20</start><duration>60</duration></interval><DERControlBase/>
       </DERControl></DERControlList>`)).toThrow(/creationTime/i);
 
-    expect(() => parseDERControlList(`<DERControlList>
+    expect(() => parseDERControlList(`<DERControlList xmlns="urn:ieee:std:2030.5:ns">
       <DERControl><mRID>A</mRID><mRID>B</mRID><creationTime>1</creationTime>
         <EventStatus><currentStatus>1</currentStatus></EventStatus>
         <interval><start>20</start><duration>60</duration></interval><DERControlBase/>
@@ -170,5 +170,9 @@ describe('xml', () => {
       '<DeviceCapability><pollRate>30</pollRate></DeviceCapability>',
       { maxBytes: 16 },
     )).toThrow(/size limit/i);
+
+    expect(() => parseDeviceCapability(
+      '<DeviceCapability xmlns="urn:not-ieee"><pollRate>30</pollRate></DeviceCapability>',
+    )).toThrow(/2030\.5 XML namespace/i);
   });
 });

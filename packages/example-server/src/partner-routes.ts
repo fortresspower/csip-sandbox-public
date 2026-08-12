@@ -110,7 +110,7 @@ export function partnerCsipRouter(domain: PartnerDomain, resolveConnection: Conn
       subject: parsed.subject,
       xml: body,
     });
-    if (parsed.status === 3 || parsed.status >= 6) await domain.completeControl(connectionId, parsed.subject, control.currentStatus);
+    if (parsed.status >= 3) await domain.completeControl(connectionId, parsed.subject, control.currentStatus);
     response.setHeader('Location', `/sep2/r/${program.token}/responses/${stored.id}`);
     response.status(201).end();
   }));

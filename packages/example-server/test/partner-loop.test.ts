@@ -157,6 +157,40 @@ describe('production-shaped partner loop', () => {
     expect(await domain.telemetry('partner-b')).toHaveLength(0);
   });
 
+  it('expires a control after a terminal declined response', async () => {
+    let clock = 100;
+    const persistence = new MemoryPartnerPersistence({ now: () => clock });
+    const { app, domain } = makePartnerApp({
+      persistence,
+      resolveConnection: () => 'partner-a',
+      now: () => clock,
+      retention: { historySeconds: 30 },
+    });
+    await domain.createConnection('partner-a', AGGREGATOR);
+    const program = await domain.createProgram('partner-a', 'dispatch', 'remote-dispatch');
+    await domain.registerDevice('partner-a', HILDA);
+    await domain.moveAssignment('partner-a', 'dispatch', HILDA);
+    await domain.publishControl({
+      connectionId: 'partner-a',
+      programId: 'dispatch',
+      mRID: 'declined-control',
+      start: clock,
+      duration: 300,
+      opModFixedW: -500,
+    });
+
+    const response = await request(app)
+      .post(`/sep2/r/${program.token}/responses`)
+      .set('Content-Type', 'application/sep+xml')
+      .send(`<?xml version="1.0"?><DERControlResponse xmlns="urn:ieee:std:2030.5:ns">
+        <createdDateTime>${clock}</createdDateTime><endDeviceLFDI>${HILDA}</endDeviceLFDI>
+        <status>4</status><subject>declined-control</subject></DERControlResponse>`);
+    expect(response.status).toBe(201);
+
+    clock = 131;
+    expect(await domain.controls('partner-a')).toHaveLength(0);
+  });
+
   it('redacts unexpected persistence failures as server errors', async () => {
     const failure = new Error('DynamoDB table secret-name throttled');
     const broken = {
