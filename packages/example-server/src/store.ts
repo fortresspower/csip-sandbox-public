@@ -1,12 +1,12 @@
 export interface QueuedControl {
   mRID: string;
+  creationTime?: number;
+  eventStatus?: number;
+  interval?: { start: number; duration: number };
+  primacy?: number;
   opModConnect?: boolean;
   opModMaxLimW?: number;
   opModFixedW?: number;
-  // Per-control timing. Omit for back-compat (controlXml falls back to start=0/duration=600).
-  // `start` + `duration` are 2030.5 epoch SECONDS; a future `start` exercises the scheduled branch.
-  interval?: { start: number; duration: number };
-  eventStatus?: number; // EventStatus.currentStatus; defaults to 1 when omitted
 }
 
 /** One observed exchange, for the wire log. `dir`: poll = 2030.5 GET the client makes,

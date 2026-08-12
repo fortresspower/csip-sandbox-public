@@ -1,6 +1,12 @@
 import type { UomCode } from './uom.js';
 
-export interface Sep2List<T> { all: number; results: number; items: T[]; }
+export interface Sep2List<T> {
+  all: number;
+  results: number;
+  items: T[];
+  pollRate?: number;
+  nextHref?: string;
+}
 
 export interface DeviceCapability {
   pollRate: number;
@@ -9,12 +15,25 @@ export interface DeviceCapability {
   TimeLink?: string;
 }
 
+export interface EndDevice {
+  href?: string;
+  lFDI: string;
+  FunctionSetAssignmentsListLink?: string;
+  DERListLink?: string;
+}
+
 export interface FunctionSetAssignments {
+  href?: string;
   mRID: string;
   DERProgramListLink?: string;
 }
 
-export interface DERProgram { mRID: string; primacy: number; DERControlListLink?: string; }
+export interface DERProgram {
+  href?: string;
+  mRID: string;
+  primacy: number;
+  DERControlListLink?: string;
+}
 
 /** v1 control modes only — connect/disconnect, max active power limit, fixed W setpoint. */
 export interface DERControlBase {
@@ -23,10 +42,18 @@ export interface DERControlBase {
   opModFixedW?: number;     // BASIC-013/014, signed watts setpoint (+ charge / - discharge)
 }
 
-export interface EventStatus { currentStatus: number; }
+export interface EventStatus {
+  currentStatus: number;
+  dateTime?: number;
+  potentiallySuperseded?: boolean;
+  potentiallySupersededTime?: number;
+}
 export interface DateTimeInterval { start: number; duration: number; }
 
 export interface DERControl {
+  href?: string;
+  replyTo?: string;
+  responseRequired: string;
   mRID: string;
   creationTime: number;
   EventStatus: EventStatus;
@@ -34,7 +61,9 @@ export interface DERControl {
   DERControlBase: DERControlBase;
 }
 
-export type ResponseStatus = 1 | 2 | 4 | 5 | 6;  // received/started/completed/declined/superseded (Table 27)
+export type ResponseStatus =
+  | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14
+  | 252 | 253 | 254;
 export interface DERControlResponse { createdDateTime: number; endDeviceLFDI: string; status: ResponseStatus; subject: string; }
 
 export interface PercentType { value: number; }   // hundredths of a percent in spec; sandbox uses whole %
@@ -55,6 +84,12 @@ export interface DERCapability {
   rtgMaxChargeRateW?: number; rtgMaxDischargeRateW?: number;
 }
 
+export interface DER {
+  href?: string;
+  DERStatusLink?: string;
+  DERCapabilityLink?: string;
+}
+
 export interface ReadingType {
   uom: UomCode;
   kind?: number;
@@ -66,7 +101,14 @@ export interface ReadingType {
 
 export interface Reading { timePeriod: { start: number; duration: number }; value: number; }
 export interface MirrorMeterReading { mRID: string; description?: string; ReadingType: ReadingType; Reading: Reading; }
-export interface MirrorUsagePoint { mRID: string; description?: string; postRate?: number; deviceLFDI: string; MirrorMeterReadings: MirrorMeterReading[]; }
+export interface MirrorUsagePoint {
+  href?: string;
+  mRID: string;
+  description?: string;
+  postRate?: number;
+  deviceLFDI: string;
+  MirrorMeterReadings: MirrorMeterReading[];
+}
 
 export interface ParsedReading { mRID: string; description?: string; uom: number; value: number; start: number; convention?: string; }
 export interface MirrorMeterReadingListPage { items: MirrorMeterReading[]; all: number; results: number; nextHref?: string; }

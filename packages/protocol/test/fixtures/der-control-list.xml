@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DERControlList xmlns="urn:ieee:std:2030.5:ns" all="3" results="1">
+  <pollRate>15</pollRate>
+  <Link rel="next" href="/controls/program-blue?s=1"/>
+  <DERControl href="/controls/program-blue/control-A">
+    <mRID>CONTROL-A</mRID>
+    <creationTime>1725000000</creationTime>
+    <EventStatus><currentStatus>1</currentStatus></EventStatus>
+    <interval><start>1725000060</start><duration>600</duration></interval>
+    <DERControlBase><opModFixedW>-3000</opModFixedW></DERControlBase>
+  </DERControl>
+</DERControlList>

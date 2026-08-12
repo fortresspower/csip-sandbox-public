@@ -1,23 +1,42 @@
 import { loadConfig } from './config.js';
+import { deviceLfdi } from '@fortress-csip/client-core';
 import { SyntheticGenerator } from './generator.js';
 import { CsipClient, type Transport } from './state-machine.js';
 import { startInspect } from './inspect.js';
 
 const httpTransport = (base: string): Transport => ({
-  async get(path) { const r = await fetch(base + path, { headers: { Accept: 'application/sep+xml' } }); return r.text(); },
+  origin: new URL(base).origin,
+  async get(path) {
+    const r = await fetch(base + path, { headers: { Accept: 'application/sep+xml' } });
+    if (!r.ok) throw new Error(`GET ${path} failed with status ${r.status}`);
+    return r.text();
+  },
   async post(path, xml) { const r = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/sep+xml' }, body: xml }); return { status: r.status, location: r.headers.get('location') ?? undefined }; },
   async put(path, xml) { const r = await fetch(base + path, { method: 'PUT', headers: { 'Content-Type': 'application/sep+xml' }, body: xml }); return { status: r.status }; },
 });
 
 async function main() {
   const cfg = loadConfig();
-  const gen = new SyntheticGenerator({ lFDI: 'SANDBOX-SITE-1', nameplateW: 5000, capacityWh: 13500, initialSoC: 50 });
+  const gen = new SyntheticGenerator({
+    lFDI: deviceLfdi(cfg.connectionId, 'SANDBOX-SITE-1'),
+    nameplateW: 5000,
+    capacityWh: 13500,
+    initialSoC: 50,
+  });
   const state: { lastControl?: string; lastPostAt?: number } = {};
   // KNOWN FOLLOW-UP: the client posts all lanes (both standard and fortress extension points) to
   // /mup/0. As a result, live fortress-lane readings land on mup 0 rather than mup 1. The
   // boot-time backfill still demonstrates the /mup/1 split correctly. A future enhancement would
   // split postTelemetry() to POST fortress-tier points to /mup/1.
-  const client = new CsipClient({ generator: gen, transport: httpTransport(cfg.serverUrl), subscription: cfg.subscription, mupHref: '/mup/0', onControlApplied: (label) => { state.lastControl = label; } });
+  const client = new CsipClient({
+    generator: gen,
+    transport: httpTransport(cfg.serverUrl),
+    subscription: cfg.subscription,
+    mupHref: '/mup/0',
+    controlListHref: cfg.controlListHref,
+    connectionId: cfg.connectionId,
+    onControlApplied: (label) => { state.lastControl = label; },
+  });
 
   setInterval(() => { gen.step(5); }, 5000);
 

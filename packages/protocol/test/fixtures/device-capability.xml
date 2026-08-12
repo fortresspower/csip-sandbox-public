@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DeviceCapability xmlns="urn:ieee:std:2030.5:ns" pollRate="30">
+  <EndDeviceListLink href="/partner/end-devices-v2"/>
+  <MirrorUsagePointListLink href="/metering/mirrors-green"/>
+  <TimeLink href="/clock/current"/>
+</DeviceCapability>

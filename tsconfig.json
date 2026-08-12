@@ -1,1 +1,9 @@
-{ "files": [], "references": [{ "path": "packages/protocol" }, { "path": "packages/client" }, { "path": "packages/example-server" }] }
+{
+  "files": [],
+  "references": [
+    { "path": "packages/protocol" },
+    { "path": "packages/client-core" },
+    { "path": "packages/client" },
+    { "path": "packages/example-server" }
+  ]
+}

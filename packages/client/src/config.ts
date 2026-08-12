@@ -2,6 +2,8 @@ export interface ClientConfig {
   serverUrl: string;
   controlPollSec: number;
   telemetryPostSec: number;
+  controlListHref: string;
+  connectionId: string;
   subscription: string[];          // catalog fortressPoint ids this partner receives
   inspectPort: number;
 }
@@ -10,6 +12,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ClientConfig {
     serverUrl: env.CSIP_SERVER_URL ?? 'http://localhost:7001',
     controlPollSec: Number(env.CSIP_CONTROL_POLL_SEC ?? 600),
     telemetryPostSec: Number(env.CSIP_TELEMETRY_POST_SEC ?? 300),
+    controlListHref: env.CSIP_CONTROL_LIST_HREF ?? '/derp/0/derc',
+    connectionId: env.CSIP_CONNECTION_ID ?? 'sandbox-partner',
     subscription: (env.CSIP_SUBSCRIPTION ?? 'model101.W,model101.VAr,model101.Hz,model101.PhVphA,model802.SoC')
       .split(',').map((s) => s.trim()).filter(Boolean),
     inspectPort: Number(env.CSIP_INSPECT_PORT ?? 7100),
