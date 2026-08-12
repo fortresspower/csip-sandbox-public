@@ -1,8 +1,21 @@
-import { parseDERControlList, serializeMirrorMeterReadingList, findPoint, type MirrorMeterReading } from '@fortress-csip/protocol';
+import {
+  CsipSession,
+  CsipProtocolError,
+  CsipRetryableServerError,
+  MemorySessionStore,
+  ResourceClient,
+  type AssignmentSnapshot,
+  type ControlIntent,
+  type CsipRequestOptions,
+  type CsipResponse,
+  type CsipTransport,
+} from '@fortress-csip/client-core';
+import { serializeMirrorMeterReadingList, findPoint, type DERControl, type MirrorMeterReading } from '@fortress-csip/protocol';
 import type { SyntheticGenerator, Snapshot } from './generator.js';
 import { applyControl } from './control.js';
 
 export interface Transport {
+  origin?: string;
   get(path: string): Promise<string>;
   post(path: string, xml: string): Promise<{ status: number; location?: string }>;
   put(path: string, xml: string): Promise<{ status: number }>;
@@ -13,7 +26,10 @@ export interface CsipClientOpts {
   transport: Transport;
   subscription: string[];
   mupHref: string;
-  dercHref?: string;                          // DERControlList endpoint; example-server serves it here
+  controlListHref?: string;
+  connectionId?: string;
+  programMrid?: string;
+  programPrimacy?: number;
   onControlApplied?: (label: string) => void; // surfaces the last applied control (e.g. to /status)
   now?: () => number;          // seconds
 }
@@ -36,18 +52,50 @@ const snapshotValue = (s: Snapshot, point: string): { value: number; multiplier:
 };
 
 export class CsipClient {
-  constructor(private readonly o: CsipClientOpts) {}
+  readonly #session: CsipSession;
+  readonly #assignments: AssignmentSnapshot;
+
+  constructor(private readonly o: CsipClientOpts) {
+    const store = new MemorySessionStore();
+    const resources = new ResourceClient({ transport: coreTransport(o.transport), store });
+    this.#assignments = {
+      valid: true,
+      devices: [{
+        lFDI: o.generator.snapshot().lFDI,
+        programs: o.controlListHref ? [{
+          mRID: o.programMrid ?? 'sandbox-program',
+          primacy: o.programPrimacy ?? 0,
+          controlListHref: o.controlListHref,
+        }] : [],
+      }],
+    };
+    this.#session = new CsipSession({
+      connectionId: o.connectionId ?? 'sandbox-partner',
+      resources,
+      store,
+      now: () => this.now(),
+      sink: {
+        dispatch: async (intent) => {
+          const label = applyControl(o.generator, intentControl(intent));
+          o.onControlApplied?.(label);
+        },
+        updateLifecycle: async (update) => {
+          o.generator.setChargeSetpoint(0);
+          o.onControlApplied?.(`${update.wireMrid}: ${update.kind}`);
+        },
+      },
+    });
+  }
   private now() { return this.o.now ? this.o.now() : Math.floor(Date.now() / 1000); }
 
   async pollAndApplyControl(): Promise<void> {
-    const xml = await this.o.transport.get(this.o.dercHref ?? '/derp/0/derc');
-    const list = parseDERControlList(xml);
-    for (const c of list.items) {
-      const label = applyControl(this.o.generator, c);
-      const rsp = `<?xml version="1.0"?><DERControlResponse xmlns="urn:ieee:std:2030.5:ns"><createdDateTime>${this.now()}</createdDateTime><status>2</status><subject>${c.mRID}</subject></DERControlResponse>`;
-      await this.o.transport.post(`/rsps`, rsp);
-      this.o.onControlApplied?.(label);
+    if (!this.o.controlListHref) throw new Error('controlListHref is required to poll controls');
+    const result = await this.#session.runOnce(this.#assignments);
+    for (const intent of result.delivered) {
+      await this.#session.recordOutcome(intent.internalEventId, 'started');
+      await this.#session.recordOutcome(intent.internalEventId, 'completed');
     }
+    await this.#session.flushResponses();
   }
 
   async postTelemetry(): Promise<void> {
@@ -76,4 +124,56 @@ export class CsipClient {
     if (readings.length === 0) return;
     await this.o.transport.post(this.o.mupHref, serializeMirrorMeterReadingList(readings));
   }
+}
+
+function intentControl(intent: ControlIntent): DERControl {
+  return {
+    mRID: intent.wireMrid,
+    creationTime: intent.creationTime,
+    responseRequired: intent.responseRequired,
+    ...(intent.replyTo ? { replyTo: intent.replyTo } : {}),
+    EventStatus: { currentStatus: intent.eventStatus },
+    interval: { ...intent.interval },
+    DERControlBase: { ...intent.control },
+  };
+}
+
+function coreTransport(transport: Transport): CsipTransport {
+  const request = async (
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    href: string,
+    options: CsipRequestOptions = {},
+  ): Promise<CsipResponse> => {
+    if (method === 'GET') return { status: 200, headers: {}, body: await transport.get(href) };
+    if (method === 'POST') {
+      const response = await transport.post(href, options.body ?? '');
+      assertSuccessfulResponse(method, href, response.status);
+      return {
+        status: response.status,
+        headers: response.location ? { location: response.location } : {},
+        body: '',
+      };
+    }
+    if (method === 'PUT') {
+      const response = await transport.put(href, options.body ?? '');
+      assertSuccessfulResponse(method, href, response.status);
+      return { status: response.status, headers: {}, body: '' };
+    }
+    throw new Error('the synthetic demo transport does not support DELETE');
+  };
+  return {
+    origin: transport.origin ?? 'http://sandbox.invalid',
+    request,
+    get: (href) => request('GET', href),
+    post: (href, body) => request('POST', href, { body }),
+    put: (href, body) => request('PUT', href, { body }),
+    close: () => {},
+  };
+}
+
+function assertSuccessfulResponse(method: string, href: string, status: number): void {
+  if (status === 429 || status >= 500) {
+    throw new CsipRetryableServerError(method, href, status, '');
+  }
+  if (status >= 400) throw new CsipProtocolError(`${method} ${href} failed with status ${status}`, status, '');
 }

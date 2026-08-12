@@ -7,14 +7,20 @@
   ],
   "scripts": {
     "build": "tsc -b",
+    "pretest": "npm run build",
     "test": "vitest run",
     "demo": "bash scripts/demo-loop.sh",
-    "gen:catalog": "node scripts/gen-catalog.mjs"
+    "cert:lfdi": "tsx scripts/certificate-lfdi.ts",
+    "server:admin": "tsx scripts/server-admin.ts",
+    "gen:catalog": "node scripts/gen-catalog.mjs",
+    "release:bundle": "node scripts/release-bundle.mjs",
+    "release:verify": "node scripts/release-bundle.mjs --verify"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "esbuild": "^0.28.2",
     "tsx": "^4.19.0",
     "typescript": "^5.9.3",
-    "vitest": "^2.1.9"
+    "vitest": "^4.1.10"
   }
 }

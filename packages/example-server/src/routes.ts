@@ -81,12 +81,10 @@ export function csipRouter(store: Store): Router {
   return r;
 }
 function controlXml(c: QueuedControl): string {
+  const interval = c.interval ?? { start: 0, duration: 600 };
+  const primacy = c.primacy === undefined ? '' : `<primacy>${c.primacy}</primacy>`;
   const base = [c.opModConnect !== undefined ? `<opModConnect>${c.opModConnect}</opModConnect>` : '', c.opModMaxLimW !== undefined ? `<opModMaxLimW>${c.opModMaxLimW}</opModMaxLimW>` : '', c.opModFixedW !== undefined ? `<opModFixedW>${c.opModFixedW}</opModFixedW>` : ''].join('');
-  // Per-control timing (U9): emit the injected interval/eventStatus, falling back to the historical
-  // hardcodes when omitted so existing immediate-control callers are unaffected.
-  const { start, duration } = c.interval ?? { start: 0, duration: 600 };
-  const currentStatus = c.eventStatus ?? 1;
-  return `<DERControl><mRID>${c.mRID}</mRID><creationTime>0</creationTime><EventStatus><currentStatus>${currentStatus}</currentStatus></EventStatus><interval><start>${start}</start><duration>${duration}</duration></interval><DERControlBase>${base}</DERControlBase></DERControl>`;
+  return `<DERControl replyTo="/rsps" responseRequired="03"><mRID>${c.mRID}</mRID><creationTime>${c.creationTime ?? 0}</creationTime><EventStatus><currentStatus>${c.eventStatus ?? 1}</currentStatus></EventStatus><interval><start>${interval.start}</start><duration>${interval.duration}</duration></interval>${primacy}<DERControlBase>${base}</DERControlBase></DERControl>`;
 }
 function send(res: Response, body: string) { res.setHeader('Content-Type', 'application/sep+xml'); res.status(200).send(body); }
 function bodyText(req: Request): string { return typeof req.body === 'string' ? req.body : String(req.body ?? ''); }

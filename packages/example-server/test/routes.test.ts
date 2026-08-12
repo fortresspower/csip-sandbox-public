@@ -2,6 +2,14 @@ import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import { makeApp } from '../src/index.js';
 
+function meterReadingXml(mRID = 'test-reading', value = 1, convention?: string): string {
+  return `<MirrorMeterReading xmlns="urn:ieee:std:2030.5:ns">
+    <mRID>${mRID}</mRID>
+    <ReadingType>${convention ? `<mRID>${convention}</mRID>` : ''}<uom>38</uom></ReadingType>
+    <Reading><timePeriod><start>1</start><duration>0</duration></timePeriod><value>${value}</value></Reading>
+  </MirrorMeterReading>`;
+}
+
 describe('routes', () => {
   it('serves a DeviceCapability with the 2030.5 namespace', async () => {
     const { app } = makeApp();
@@ -14,7 +22,8 @@ describe('routes', () => {
     store.queueControl({ mRID: 'C1', opModFixedW: -3000 });
     const list = await request(app).get('/derp/0/derc');
     expect(list.text).toContain('opModFixedW');
-    const post = await request(app).post('/mup/0/mr').set('Content-Type', 'application/sep+xml').send('<MirrorMeterReading/>');
+    const post = await request(app).post('/mup/0/mr').set('Content-Type', 'application/sep+xml')
+      .send(meterReadingXml());
     expect(post.status).toBe(201);
     expect(post.headers.location).toBeDefined();
     expect(store.meterReadings()).toHaveLength(1);
@@ -24,6 +33,23 @@ describe('routes', () => {
     const r = await request(app).post('/test/dercontrol').set('Content-Type', 'application/json').send({ mRID: 'X', opModMaxLimW: 2000 });
     expect(r.status).toBe(202);
     expect(store.controls()).toHaveLength(1);
+  });
+  it('preserves injected control timing, status, and priority on the CSIP wire', async () => {
+    const { app } = makeApp();
+    await request(app).post('/test/dercontrol').set('Content-Type', 'application/json').send({
+      mRID: 'scheduled-control',
+      creationTime: 1786506240,
+      eventStatus: 1,
+      interval: { start: 1786506250, duration: 40 },
+      primacy: 10,
+      opModFixedW: -3000,
+    });
+
+    const list = await request(app).get('/derp/0/derc');
+    expect(list.text).toContain('<creationTime>1786506240</creationTime>');
+    expect(list.text).toContain('<currentStatus>1</currentStatus>');
+    expect(list.text).toContain('<start>1786506250</start><duration>40</duration>');
+    expect(list.text).toContain('<primacy>10</primacy>');
   });
   it('rejects a /test/dercontrol injection with no mRID', async () => {
     const { app, store } = makeApp();
@@ -41,8 +67,8 @@ describe('routes', () => {
   it('accepts a batched MirrorMeterReadingList POST to the MUP and stores each reading', async () => {
     const { app, store } = makeApp();
     const list = '<?xml version="1.0"?><MirrorMeterReadingList xmlns="urn:ieee:std:2030.5:ns" all="2" results="2">'
-      + '<MirrorMeterReading><mRID>a</mRID><Reading><value>1</value></Reading></MirrorMeterReading>'
-      + '<MirrorMeterReading><mRID>b</mRID><Reading><value>-2</value></Reading></MirrorMeterReading>'
+      + meterReadingXml('a', 1).replace(/ xmlns="[^"]+"/, '')
+      + meterReadingXml('b', -2).replace(/ xmlns="[^"]+"/, '')
       + '</MirrorMeterReadingList>';
     const r = await request(app).post('/mup/0').set('Content-Type', 'application/sep+xml').send(list);
     expect(r.status).toBe(201);
@@ -80,7 +106,7 @@ describe('routes', () => {
     await request(app).post('/test/dercontrol').set('Content-Type', 'application/json').send({ mRID: 'W1', opModFixedW: -1000 });
     await request(app).get('/derp/0/derc'); // 2030.5 poll (drains + serves the control)
     await request(app).post('/mup/0/mr').set('Content-Type', 'application/sep+xml')
-      .send('<MirrorMeterReading><ReadingType><mRID>fortress:cell-N-voltage</mRID></ReadingType></MirrorMeterReading>');
+      .send(meterReadingXml('cell-N-voltage', 3.2, 'fortress:cell-N-voltage'));
 
     const wire = await request(app).get('/test/wire');
     expect(wire.status).toBe(200);

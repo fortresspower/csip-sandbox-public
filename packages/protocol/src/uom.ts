@@ -1,5 +1,6 @@
 /** UOM codes from IEEE 2030.5-2018 Annex A UomType (IEC 61968-9). */
 export const Uom = {
+  None: 0,
   Amps: 5,
   Voltage: 29,
   Hz: 33,

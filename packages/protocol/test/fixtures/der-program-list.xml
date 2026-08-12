@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DERProgramList xmlns="urn:ieee:std:2030.5:ns" all="1" results="1">
+  <DERProgram href="/programs/blue-fleet/dispatch">
+    <mRID>PROGRAM-BLUE</mRID>
+    <primacy>2</primacy>
+    <DERControlListLink href="/controls/program-blue"/>
+  </DERProgram>
+</DERProgramList>

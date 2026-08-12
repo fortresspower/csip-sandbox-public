@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EndDeviceList xmlns="urn:ieee:std:2030.5:ns" all="2" results="1">
+  <pollRate>45</pollRate>
+  <Link rel="next" href="/partner/end-devices-v2?s=1"/>
+  <EndDevice href="/partner/end-devices-v2/hilda-alpha">
+    <lFDI>0123456789abcdef0123456789abcdef01234567</lFDI>
+    <FunctionSetAssignmentsListLink href="/assignments/summer-a"/>
+    <DERListLink href="/devices/hilda-alpha/ders"/>
+  </EndDevice>
+</EndDeviceList>

@@ -4,15 +4,15 @@
 
 A standalone, fully-mocked **IEEE 2030.5 / CSIP** partner-enablement sandbox.
 
-It ships two artifacts so a VPP/aggregator partner can build their **server** against a
-correct Fortress **client** before Fortress's real backend exists:
+It ships three cooperating artifacts so a VPP/aggregator partner can build their **server**
+against the Fortress polling contract before a live connection is enabled:
 
-1. **A spec-compliant, fully-mocked Fortress client** — runs the CSIP telemetry + control
-   sequence the way the real Fortress client will. Its synthetic "backend" (sites, DERs,
-   telemetry) is faked; there is no real database, no managers, no gRPC. **The client's
-   behavior is the contract.**
-2. **A hollow-but-correct example server** — a target so the loop runs end-to-end with no
-   partner code, and a forkable starting point for a partner's own server.
+1. **`@fortress-csip/client-core`** — the production-shaped discovery, in-band enrollment,
+   assignment, control lifecycle, telemetry, and secure-transport behavior.
+2. **A fully mocked Fortress client** — connects that core to a synthetic battery so the
+   complete loop can run without a Fortress backend or physical device.
+3. **A hollow-but-correct example server** — a target for the loop and a forkable starting
+   point for a partner's own server.
 
 Everything serializes through one shared `protocol` package, so the client and the example
 server **cannot drift** from each other or from the wire contract.
@@ -95,8 +95,17 @@ npm test              # vitest — unit + integration (client <-> server over lo
 npm run build         # tsc -b across all packages
 ```
 
-> The packages run their TypeScript entrypoints directly via `tsx` (the package export maps
-> resolve to source `.ts`), so the containers do not need a separate compiled `dist/` to run.
+> Local scripts run TypeScript through `tsx`. The example-server image is a multi-stage build
+> that compiles first and copies only runtime dependencies, compiled output, and console assets.
+
+### From sandbox to Fortress polling
+
+Start with the [partner onboarding guide](docs/partner/onboarding.md), then use the
+[conformance profile](docs/partner/conformance-profile.md) and
+[evidence checklist](docs/partner/evidence-checklist.md) before asking Fortress to connect.
+The normal deployed relationship is a partner-owned public HTTPS server on TCP 443. Fortress
+initiates every request with a connection-specific client certificate; the partner does not
+need private connectivity or inbound access to Fortress.
 
 ---
 
@@ -125,22 +134,23 @@ intentionally lenient validation so exploratory payloads don't need to be fully 
 | `CSIP_SERVER_URL` | `http://localhost:7001` | Base URL of the 2030.5 server to talk to |
 | `CSIP_CONTROL_POLL_SEC` | `600` | How often to poll `DERControl` (compose demo uses `10`) |
 | `CSIP_TELEMETRY_POST_SEC` | `300` | How often to post telemetry (compose demo uses `10`) |
+| `CSIP_CONNECTION_ID` | `sandbox-partner` | Stable connection namespace used by the reusable client state |
+| `CSIP_CONTROL_LIST_HREF` | `/derp/0/derc` | Local-demo shortcut; deployed integrations discover this link |
 | `CSIP_SUBSCRIPTION` | the five CSIP-required points | Comma-separated catalog point ids this partner receives (see below) |
 | `CSIP_INSPECT_PORT` | `7100` | Port for the client's `/status` inspection endpoint |
 
 ---
 
-## What the loop does
+## What the local loop does
 
-**What the v1 client actually sends** (this is the contract you can rely on today):
+The zero-config Docker client intentionally uses fixed local-demo hrefs. It sends:
 
 - `GET /derp/0/derc` — poll the `DERControlList`, apply each control, then `POST /rsps` a
   `DERControlResponse` ack for each.
 - `POST /mup/0` — post a single **`MirrorMeterReadingList`** carrying all subscribed
   **reading-type** points for the interval (real/reactive power, frequency, voltage, plus any
   Fortress extension points) — the canonical batch form (IEEE 2030.5 §10.11.3(d)), not one
-  POST per point. Resource hrefs are fixed in v1 (the client does not yet walk `dcap`
-  discovery — see "Not yet wired" below).
+  POST per point.
 
 **What the example server additionally supports** — present so you can fork it as a complete
 scaffold and so a future/your-own client can exercise the rest of the surface:
@@ -148,19 +158,15 @@ scaffold and so a future/your-own client can exercise the rest of the surface:
 - `GET /dcap` — minimal discovery (`DeviceCapability`).
 - `PUT /edev/0/der/0/ders` — a `DERStatus` route (operational state / connection / SoC).
 
-### Not yet wired in v1
+### Production-shaped client core
 
-The sandbox is the **telemetry + control happy path**. These are deliberately deferred (the
-example server already has the routes; the v1 client just doesn't drive them yet):
-
-- **`dcap`→`FunctionSetAssignments`→`DERProgram` discovery** — the client uses fixed hrefs
-  instead of walking the discovery chain.
-- **`MirrorUsagePoint` registration** (`GET /mup` → `POST` a MUP → store the returned mRID)
-  — the client posts to a fixed `/mup/0`.
-- **`DERStatus` reporting, including State-of-Charge.** `model802.SoC` is in the default
-  subscription, but it is a `der-status-field` (it belongs in a `DERStatus` PUT, not a
-  `MirrorMeterReading`), so the v1 client does not emit it. Only the reading-type points
-  reach the server today.
+The reusable `client-core` is the contract for a deployed integration. It follows advertised,
+same-origin links instead of assuming numeric resource paths; registers EndDevices in-band by
+LFDI; treats the partner's FunctionSetAssignments as authoritative; persists control and
+response state across restarts; separates control, standard telemetry, extension telemetry,
+DERStatus, and DERCapability lanes; and requires verified TLS plus a client certificate for
+every non-loopback connection. The production-shaped partner-loop tests exercise those paths
+against the example server with randomized opaque resource identifiers.
 
 **Control modes that visibly move the synthetic telemetry** (a deliberate subset of the
 CSIP BASIC inverter-control matrix):
@@ -235,21 +241,23 @@ the `fortress:*` mRID convention.)
 ## Transport / security
 
 > [!WARNING]
-> **This sandbox has no security controls. Run it only on a network you control.**
+> **The zero-config Docker demo is deliberately local-only. Run it on a network you control.**
 >
-> - **No authentication.** Every endpoint is open, including the `/test/*` admin API, which
+> - Its local-demo endpoints are open, including `/test/*`, which
 >   can inject `DERControl` events and reset server state.
-> - **No transport security.** Plain HTTP by default, for a zero-friction first run.
-> - **No mTLS.** The CSIP certificate profile is *not* implemented here.
+> - It uses plain HTTP for a zero-friction first run.
 > - **Permissive CORS** (`Access-Control-Allow-Origin: *`) so the browser console and partner
 >   tooling can call it from anywhere.
 >
-> Never expose this to the public internet, and never point it at real distributed energy
-> resources or any grid-connected equipment. It is a development and integration-testing
-> tool. A production 2030.5 deployment must implement the CSIP certificate profile (mTLS).
+> Never expose local-demo mode to the public internet or point it at grid-connected equipment.
 
-When you wire TLS for your own testing, terminate it in front of, or inside, the example
-server; the client talks to whatever `CSIP_SERVER_URL` points at.
+Every non-loopback `client-core` connection requires verified TLS and a client certificate.
+The example server also has an explicit `CSIP_SERVER_MODE=partner` bootstrap with durable
+persistence and certificate-derived connection authorization; it does not expose the console
+or `/test/*`. This repository deliberately includes no Fortress cloud infrastructure or
+credentials. A deployed server must terminate or implement mTLS, keep the application task
+unreachable except through that verified boundary, and expose only its IEEE 2030.5 graph plus
+a non-sensitive health check.
 
 ---
 

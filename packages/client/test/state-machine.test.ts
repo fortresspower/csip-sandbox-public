@@ -5,8 +5,9 @@ import { CsipClient, type Transport } from '../src/state-machine.js';
 function fakeTransport(controlXml: string): Transport & { posted: { path: string; xml: string }[] } {
   const posted: { path: string; xml: string }[] = [];
   return {
+    origin: 'https://partner.example',
     posted,
-    async get(path) { return path.includes('derc') ? controlXml : '<x/>'; },
+    async get(path) { return path === '/partner/random-control-feed' ? controlXml : '<x/>'; },
     async post(path, xml) { posted.push({ path, xml }); return { status: 201, location: '/mup/0/mr/0' }; },
     async put(path, xml) { posted.push({ path, xml }); return { status: 204 }; },
   };
@@ -14,16 +15,27 @@ function fakeTransport(controlXml: string): Transport & { posted: { path: string
 
 describe('CsipClient', () => {
   it('posts subscribed telemetry points and applies a polled control', async () => {
-    const g = new SyntheticGenerator({ lFDI: 'S', nameplateW: 5000, capacityWh: 13500, initialSoC: 50 });
+    const g = new SyntheticGenerator({
+      lFDI: '1111111111111111111111111111111111111111',
+      nameplateW: 5000,
+      capacityWh: 13500,
+      initialSoC: 50,
+    });
     const control = `<?xml version="1.0"?><DERControlList xmlns="urn:ieee:std:2030.5:ns" all="1" results="1">
-      <DERControl><mRID>E1</mRID><creationTime>1</creationTime><EventStatus><currentStatus>1</currentStatus></EventStatus>
+      <DERControl replyTo="/partner/random-responses" responseRequired="03"><mRID>E1</mRID><creationTime>1</creationTime><EventStatus><currentStatus>1</currentStatus></EventStatus>
       <interval><start>1</start><duration>600</duration></interval><DERControlBase><opModFixedW>-3000</opModFixedW></DERControlBase></DERControl></DERControlList>`;
     const t = fakeTransport(control);
-    const client = new CsipClient({ generator: g, transport: t, subscription: ['model101.W'], mupHref: '/mup/0' });
+    const client = new CsipClient({
+      generator: g,
+      transport: t,
+      subscription: ['model101.W'],
+      mupHref: '/mup/0',
+      controlListHref: '/partner/random-control-feed',
+    });
 
     await client.pollAndApplyControl();
     expect(g.snapshot().realPowerW).toBeLessThan(0);          // discharge applied
-    expect(t.posted.some((p) => p.path.includes('rsps') || p.xml.includes('DERControlResponse'))).toBe(true);
+    expect(t.posted.filter((post) => post.path === '/partner/random-responses')).toHaveLength(3);
 
     await client.postTelemetry();
     const mmrPosts = t.posted.filter((p) => p.xml.includes('MirrorMeterReading'));
