@@ -2,6 +2,16 @@
   "name": "@fortress-csip/example-server",
   "version": "0.0.0",
   "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./partner-domain": "./src/partner-domain.ts",
+    "./partner-app": "./src/partner-app.ts",
+    "./persistence/port": "./src/persistence/port.ts",
+    "./persistence/memory": "./src/persistence/memory.ts",
+    "./persistence/dynamodb": "./src/persistence/dynamodb.ts"
+  },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1108.0",
     "@aws-sdk/lib-dynamodb": "^3.1108.0",

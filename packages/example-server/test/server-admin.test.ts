@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import request from 'supertest';
 import { runAdminCommand } from '../../../scripts/server-admin.js';
+import { makePartnerApp } from '../src/partner-app.js';
 import { PartnerDomain } from '../src/partner-domain.js';
 import { MemoryPartnerPersistence } from '../src/persistence/memory.js';
 
@@ -79,5 +81,73 @@ describe('server-admin command layer', () => {
       opModFixedW: -1_000,
       responseRequired: '80',
     })).rejects.toThrow(/responseRequired/i);
+  });
+
+  it('publishes and cancels an event through the same domain operations the bridge uses', async () => {
+    const now = () => 1_000;
+    const domain = new PartnerDomain({ persistence: new MemoryPartnerPersistence({ now }), now });
+    await domain.createConnection('partner-a', AGGREGATOR);
+    await domain.registerDevice('partner-a', DEVICE);
+    const output: unknown[] = [];
+
+    await runAdminCommand(domain, [
+      'event', 'publish', '--connection', 'partner-a', '--request', 'req-1', '--event', 'ev1',
+      '--target', DEVICE, '--start', '1200', '--duration', '300', '--fixed-w', '-3000',
+    ], (value) => output.push(value));
+    await runAdminCommand(domain, [
+      'event', 'cancel', '--connection', 'partner-a', '--request', 'req-c', '--event', 'ev1',
+    ], (value) => output.push(value));
+
+    expect(output[0]).toEqual(expect.objectContaining({ eventId: 'ev1', programId: 'evt-ev1', currentStatus: 1 }));
+    expect(output[1]).toEqual(expect.objectContaining({ eventId: 'ev1', currentStatus: 2 }));
+    expect(await domain.controls('partner-a')).toEqual([
+      expect.objectContaining({ mRID: 'evt-ev1', currentStatus: 2, opModFixedW: -3_000 }),
+    ]);
+  });
+
+  it('refuses an event publish that names more than one target', async () => {
+    const now = () => 1_000;
+    const domain = new PartnerDomain({ persistence: new MemoryPartnerPersistence({ now }), now });
+    await domain.createConnection('partner-a', AGGREGATOR);
+    await domain.registerDevice('partner-a', DEVICE);
+
+    await expect(runAdminCommand(domain, [
+      'event', 'publish', '--connection', 'partner-a', '--request', 'req-1', '--event', 'ev1',
+      '--target', DEVICE, '--target', DEVICE, '--start', '1200', '--duration', '300', '--fixed-w', '-3000',
+    ])).rejects.toThrow(/more than once/i);
+
+    expect(await domain.controls('partner-a')).toEqual([]);
+  });
+
+  it('leaves the partner-mode server without any operator or admin HTTP route', async () => {
+    const { app } = makePartnerApp({
+      persistence: new MemoryPartnerPersistence(),
+      resolveConnection: () => 'partner-a',
+      now: () => 1_000,
+    });
+
+    for (const path of ['/test/reset', '/test/dercontrol', '/admin/event', '/event/publish']) {
+      expect((await request(app).post(path).send({})).status).toBe(404);
+    }
+    expect((await request(app).get('/healthz')).status).toBe(200);
+  });
+
+  it('keeps a terminal control terminal instead of rewriting its lifecycle', async () => {
+    const now = () => 1_000;
+    const domain = new PartnerDomain({ persistence: new MemoryPartnerPersistence({ now }), now });
+    await domain.createConnection('partner-a', AGGREGATOR);
+    await domain.registerDevice('partner-a', DEVICE);
+    await domain.publishEventCommand({
+      connectionId: 'partner-a', requestId: 'req-1', eventId: 'ev1',
+      targetLfdi: DEVICE, start: 1_200, duration: 300, opModFixedW: -3_000,
+    });
+    await domain.completeControl('partner-a', 'evt-ev1', 2);
+
+    await expect(domain.completeControl('partner-a', 'evt-ev1', 1)).rejects.toThrow(/already terminal/i);
+    await expect(domain.completeControl('partner-a', 'evt-ev1', 9)).rejects.toThrow(/between 0 and 4/i);
+
+    expect(await domain.controls('partner-a')).toEqual([expect.objectContaining({
+      currentStatus: 2, start: 1_200, duration: 300, opModFixedW: -3_000, programId: 'evt-ev1',
+    })]);
   });
 });

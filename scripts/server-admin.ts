@@ -58,10 +58,31 @@ export async function runAdminCommand(domain: PartnerDomain, argv: string[], out
     output({ connectionId, programId, deviceToken: token, assigned: true });
     return;
   }
+  if (resource === 'event' && action === 'publish') {
+    rejectUnsupportedModes(flags);
+    const result = await domain.publishEventCommand({
+      connectionId: required(flags, 'connection'),
+      requestId: required(flags, 'request'),
+      eventId: required(flags, 'event'),
+      targetLfdi: required(flags, 'target'),
+      start: integer(flags.start ?? String(Math.floor(Date.now() / 1_000)), 'start'),
+      duration: integer(flags.duration ?? '300', 'duration'),
+      opModFixedW: number(required(flags, 'fixed-w'), 'fixed-w'),
+    });
+    output(result);
+    return;
+  }
+  if (resource === 'event' && action === 'cancel') {
+    const result = await domain.cancelEventCommand({
+      connectionId: required(flags, 'connection'),
+      requestId: required(flags, 'request'),
+      eventId: required(flags, 'event'),
+    });
+    output(result);
+    return;
+  }
   if (resource === 'control' && action === 'publish') {
-    if (flags.connect !== undefined || flags['max-w'] !== undefined) {
-      throw new Error('initial interoperability profile supports only --fixed-w');
-    }
+    rejectUnsupportedModes(flags);
     const now = Math.floor(Date.now() / 1_000);
     const control = await domain.publishControl({
       connectionId: required(flags, 'connection'),
@@ -100,6 +121,12 @@ function parseFlags(args: string[]): Record<string, string> {
   return flags;
 }
 
+function rejectUnsupportedModes(flags: Record<string, string>): void {
+  if (flags.connect !== undefined || flags['max-w'] !== undefined) {
+    throw new Error('initial interoperability profile supports only --fixed-w');
+  }
+}
+
 function required(flags: Record<string, string>, name: string): string {
   const value = flags[name];
   if (!value) throw new Error(`--${name} is required`);
@@ -128,6 +155,8 @@ function usage(): string {
     '  server-admin device list --connection ID',
     '  server-admin assignment move --connection ID --program ID --device-token TOKEN',
     '  server-admin control publish --connection ID --program ID --mrid MRID [--start EPOCH] [--duration 1..900] --fixed-w -5000..5000',
+    '  server-admin event publish --connection ID --request ID --event ID --target LFDI [--start EPOCH] [--duration 1..900] --fixed-w -5000..5000',
+    '  server-admin event cancel --connection ID --request ID --event ID',
   ].join('\n');
 }
 

@@ -7,7 +7,8 @@ export type RecordType =
   | 'control'
   | 'response'
   | 'telemetry'
-  | 'evidence';
+  | 'evidence'
+  | 'command';
 
 export interface PersistedRecord {
   connectionId: string;
@@ -46,6 +47,8 @@ export interface ProgramRecord extends PersistedRecord {
   mRID: string;
   token: string;
   primacy: number;
+  /** Event-scoped programs are created for a single control and expire with it. */
+  eventScoped?: boolean;
 }
 
 export interface ControlRecord extends PersistedRecord {
@@ -72,6 +75,31 @@ export interface ExchangeRecord extends PersistedRecord {
   details?: Record<string, unknown>;
 }
 
+/** The durable outcome of one operator command, replayed verbatim for an identical retry. */
+export interface EventCommandResult {
+  action: 'publish' | 'cancel';
+  connectionId: string;
+  requestId: string;
+  eventId: string;
+  programId: string;
+  mRID: string;
+  targetLfdi: string;
+  start: number;
+  duration: number;
+  opModFixedW: number;
+  currentStatus: number;
+  idempotent: boolean;
+}
+
+export interface CommandRecord extends PersistedRecord {
+  recordType: 'command';
+  action: 'publish' | 'cancel';
+  requestId: string;
+  requestHash: string;
+  eventId: string;
+  result: EventCommandResult;
+}
+
 export type PartnerRecord =
   | ConnectionRecord
   | ConnectionIdentityRecord
@@ -79,7 +107,8 @@ export type PartnerRecord =
   | AssignmentRecord
   | ProgramRecord
   | ControlRecord
-  | ExchangeRecord;
+  | ExchangeRecord
+  | CommandRecord;
 
 export interface PutOptions {
   ifAbsent?: boolean;
@@ -98,6 +127,13 @@ export interface PartnerPersistence {
 
 export interface RetentionPolicy {
   historySeconds: number;
+  /** How long a program and assignment may sit prepared before an unpublished control abandons them. */
+  preparationSeconds?: number;
 }
 
-export const DEFAULT_RETENTION: RetentionPolicy = { historySeconds: 30 * 24 * 60 * 60 };
+export const DEFAULT_PREPARATION_SECONDS = 15 * 60;
+
+export const DEFAULT_RETENTION: RetentionPolicy = {
+  historySeconds: 30 * 24 * 60 * 60,
+  preparationSeconds: DEFAULT_PREPARATION_SECONDS,
+};

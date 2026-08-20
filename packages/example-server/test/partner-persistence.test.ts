@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { DynamoPartnerPersistence } from '../src/persistence/dynamodb.js';
 import { createMemoryPersistenceState, MemoryPartnerPersistence } from '../src/persistence/memory.js';
-import type { PartnerPersistence } from '../src/persistence/port.js';
+import type { PartnerPersistence, PartnerRecord, PutOptions, RecordType } from '../src/persistence/port.js';
 import { PartnerDomain } from '../src/partner-domain.js';
 
 const AGGREGATOR = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -108,6 +108,97 @@ for (const [name, factory] of [
 }
 
 for (const [name, factory] of [['memory', memoryPair], ['dynamodb', dynamoPair]] as const) {
+  describe(`${name} event-scoped command records`, () => {
+    it('scopes a published event to its own program without disturbing a standing assignment', async () => {
+      let clock = 1_000;
+      const pair = factory(() => clock);
+      const domain = new PartnerDomain({ persistence: pair.first, now: () => clock });
+      await domain.createConnection('partner-a', AGGREGATOR);
+      await domain.createProgram('partner-a', 'dispatch', 'partner-program', 7);
+      await domain.registerDevice('partner-a', HILDA);
+      await domain.registerDevice('partner-a', LAB);
+      await domain.moveAssignment('partner-a', 'dispatch', HILDA);
+
+      const published = await domain.publishEventCommand({
+        connectionId: 'partner-a', requestId: 'req-1', eventId: 'ev1',
+        targetLfdi: LAB, start: 1_200, duration: 300, opModFixedW: -3_000,
+      });
+
+      clock += 10;
+      const restarted = new PartnerDomain({ persistence: pair.restart(), now: () => clock });
+      expect(await restarted.devices('partner-a')).toEqual(expect.arrayContaining([
+        expect.objectContaining({ lFDI: HILDA, assignedProgramIds: ['dispatch'] }),
+        expect.objectContaining({ lFDI: LAB, assignedProgramIds: [published.programId] }),
+      ]));
+      expect(await pair.first.get('partner-a', 'assignment', 'dispatch')).toMatchObject({
+        id: 'dispatch', programId: 'dispatch', targetLfdi: HILDA,
+      });
+      expect(await pair.first.get('partner-a', 'assignment', published.programId)).toMatchObject({
+        id: published.programId, programId: published.programId, targetLfdi: LAB,
+      });
+      expect(await restarted.controls('partner-a', published.programId)).toEqual([
+        expect.objectContaining({ mRID: published.mRID }),
+      ]);
+    });
+
+    it('abandons a preparation whose control never became discoverable', async () => {
+      let clock = 1_000;
+      const pair = factory(() => clock);
+      const persistence = failingOn(pair.first, 'control');
+      const domain = new PartnerDomain({
+        persistence, now: () => clock, retention: { historySeconds: 3_600, preparationSeconds: 60 },
+      });
+      await domain.createConnection('partner-a', AGGREGATOR);
+      await domain.registerDevice('partner-a', HILDA);
+
+      await expect(domain.publishEventCommand({
+        connectionId: 'partner-a', requestId: 'req-1', eventId: 'ev1',
+        targetLfdi: HILDA, start: 1_200, duration: 300, opModFixedW: -3_000,
+      })).rejects.toThrow(/dynamo is unavailable/);
+
+      expect(await domain.programs('partner-a')).toHaveLength(1);
+      expect(await domain.controls('partner-a')).toHaveLength(0);
+      clock = 1_061;
+      expect(await domain.programs('partner-a')).toHaveLength(0);
+      expect(await pair.first.get('partner-a', 'assignment', 'evt-ev1')).toBeUndefined();
+      expect(await domain.devices('partner-a')).toEqual([
+        expect.objectContaining({ lFDI: HILDA, assignedProgramIds: [] }),
+      ]);
+    });
+
+    it('keeps a cancelled event readable for the evidence window and then expires it as one unit', async () => {
+      let clock = 1_000;
+      const pair = factory(() => clock);
+      const domain = new PartnerDomain({
+        persistence: pair.first, now: () => clock, retention: { historySeconds: 100, preparationSeconds: 60 },
+      });
+      await domain.createConnection('partner-a', AGGREGATOR);
+      await domain.registerDevice('partner-a', HILDA);
+      const published = await domain.publishEventCommand({
+        connectionId: 'partner-a', requestId: 'req-1', eventId: 'ev1',
+        targetLfdi: HILDA, start: 1_200, duration: 300, opModFixedW: -3_000,
+      });
+      await domain.cancelEventCommand({ connectionId: 'partner-a', requestId: 'req-c', eventId: 'ev1' });
+
+      clock = 1_099;
+      expect(await domain.controls('partner-a')).toEqual([expect.objectContaining({ currentStatus: 2 })]);
+      expect(await domain.programs('partner-a')).toHaveLength(1);
+      expect(await pair.first.get('partner-a', 'assignment', published.programId)).toBeDefined();
+      expect(await pair.first.get('partner-a', 'command', 'publish:req-1')).toBeDefined();
+
+      clock = 1_101;
+      expect(await domain.controls('partner-a')).toEqual([]);
+      expect(await domain.programs('partner-a')).toEqual([]);
+      expect(await pair.first.get('partner-a', 'assignment', published.programId)).toBeUndefined();
+      expect(await pair.first.get('partner-a', 'command', 'publish:req-1')).toBeUndefined();
+      expect(await domain.devices('partner-a')).toEqual([
+        expect.objectContaining({ lFDI: HILDA, assignedProgramIds: [] }),
+      ]);
+    });
+  });
+}
+
+for (const [name, factory] of [['memory', memoryPair], ['dynamodb', dynamoPair]] as const) {
   describe(`${name} bounded history retention`, () => {
     it('expires completed controls and exchange history while active configuration survives', async () => {
       let clock = 100;
@@ -145,6 +236,23 @@ describe('dynamodb transaction error handling', () => {
     });
   });
 });
+
+/** Fails every write of one record type, standing in for a persistence outage mid-command. */
+function failingOn(persistence: PartnerPersistence, recordType: RecordType): PartnerPersistence {
+  return {
+    get: persistence.get.bind(persistence),
+    list: persistence.list.bind(persistence),
+    delete: persistence.delete.bind(persistence),
+    createConnectionWithIdentity: persistence.createConnectionWithIdentity.bind(persistence),
+    authorizeConnectionIdentity: persistence.authorizeConnectionIdentity.bind(persistence),
+    revokeConnectionIdentity: persistence.revokeConnectionIdentity.bind(persistence),
+    findConnectionByAggregatorLfdi: persistence.findConnectionByAggregatorLfdi.bind(persistence),
+    put: async (record: PartnerRecord, options?: PutOptions) => {
+      if (record.recordType === recordType) throw new Error('dynamo is unavailable');
+      return persistence.put(record, options);
+    },
+  };
+}
 
 class FakeDocumentClient {
   readonly #items = new Map<string, Record<string, unknown>>();
