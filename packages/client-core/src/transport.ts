@@ -6,6 +6,7 @@ import type { LookupAddress } from 'node:dns';
 import {
   CsipAuthenticationError,
   CsipAuthorizationError,
+  CsipCircuitOpenError,
   CsipConfigurationError,
   CsipError,
   CsipProtocolError,
@@ -22,6 +23,8 @@ import {
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
 export const DEFAULT_MAX_RESPONSE_BYTES = 1024 * 1024;
+export const DEFAULT_CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5;
+export const DEFAULT_CIRCUIT_BREAKER_RESET_TIMEOUT_MS = 30_000;
 const SEP_XML = 'application/sep+xml';
 
 const blockedAddresses = new BlockList();
@@ -62,17 +65,26 @@ function hasBytes(value: Uint8Array | undefined): value is Uint8Array {
   return value !== undefined && value.byteLength > 0;
 }
 
-function validateTls(tls: CsipTlsMaterial | undefined): asserts tls is CsipTlsMaterial {
-  if (
-    !tls
-    || !hasBytes(tls.certificate)
-    || !hasBytes(tls.privateKey)
-    || tls.certificateAuthorities.length === 0
-    || tls.certificateAuthorities.some((authority) => !hasBytes(authority))
-  ) {
+function validateTls(
+  tls: CsipTlsMaterial | undefined,
+  environment: CsipTransportOptions['environment'],
+): asserts tls is CsipTlsMaterial {
+  if (!tls || !hasBytes(tls.certificate) || !hasBytes(tls.privateKey)) {
     throw new CsipConfigurationError(
-      'HTTPS connections require a client certificate, matching private key, and at least one CA certificate',
+      'HTTPS connections require a client certificate chain and matching private key',
     );
+  }
+  if (environment === 'deployed' && tls.certificateAuthorities !== undefined) {
+    throw new CsipConfigurationError(
+      'custom CA certificates are permitted only for explicit local-test fixtures; deployed connections use system server trust',
+    );
+  }
+  if (
+    tls.certificateAuthorities !== undefined
+    && (tls.certificateAuthorities.length === 0
+      || tls.certificateAuthorities.some((authority) => !hasBytes(authority)))
+  ) {
+    throw new CsipConfigurationError('local-test custom CA certificates must be non-empty');
   }
 }
 
@@ -123,10 +135,11 @@ function mapRequestError(
 }
 
 function buildHttpsAgent(tls: CsipTlsMaterial): https.Agent {
+  const certificateAuthorities = tls.certificateAuthorities?.map((authority) => Buffer.from(authority));
   return new https.Agent({
     cert: Buffer.from(tls.certificate),
     key: Buffer.from(tls.privateKey),
-    ca: tls.certificateAuthorities.map((authority) => Buffer.from(authority)),
+    ...(certificateAuthorities ? { ca: certificateAuthorities } : {}),
     rejectUnauthorized: true,
     keepAlive: true,
   });
@@ -152,25 +165,41 @@ export function createCsipTransport(options: CsipTransportOptions): CsipTranspor
     if (isIP(baseUrl.hostname) !== 0) {
       throw new CsipConfigurationError('deployed CSIP endpoints must use a DNS hostname, not an IP literal');
     }
+    if (baseUrl.port && baseUrl.port !== '443') {
+      throw new CsipConfigurationError('deployed CSIP endpoints must use TCP 443');
+    }
   }
-  if (baseUrl.protocol === 'https:') validateTls(options.tls);
+  if (baseUrl.protocol === 'https:') validateTls(options.tls, options.environment);
   if (baseUrl.protocol === 'http:' && options.environment !== 'local-test') {
     throw new CsipConfigurationError('plain HTTP is permitted only for explicit local-test transports');
   }
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+  const circuitFailureThreshold = options.circuitBreaker?.failureThreshold
+    ?? DEFAULT_CIRCUIT_BREAKER_FAILURE_THRESHOLD;
+  const circuitResetTimeoutMs = options.circuitBreaker?.resetTimeoutMs
+    ?? DEFAULT_CIRCUIT_BREAKER_RESET_TIMEOUT_MS;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
     throw new CsipConfigurationError('timeoutMs must be a positive safe integer');
   }
   if (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes <= 0) {
     throw new CsipConfigurationError('maxResponseBytes must be a positive safe integer');
   }
+  if (!Number.isSafeInteger(circuitFailureThreshold) || circuitFailureThreshold <= 0) {
+    throw new CsipConfigurationError('circuit breaker failureThreshold must be a positive safe integer');
+  }
+  if (!Number.isSafeInteger(circuitResetTimeoutMs) || circuitResetTimeoutMs <= 0) {
+    throw new CsipConfigurationError('circuit breaker resetTimeoutMs must be a positive safe integer');
+  }
 
   const resolver = options.resolveDns ?? defaultResolver;
   const httpsAgent = baseUrl.protocol === 'https:' ? buildHttpsAgent(options.tls!) : undefined;
   const origin = baseUrl.origin;
   const basePath = baseUrl.pathname.replace(/\/+$/, '');
+  let retryableFailures = 0;
+  let circuitOpenUntil = 0;
+  let halfOpenProbeInFlight = false;
 
   async function checkedAddress(hostname: string): Promise<{ address: string; family: 4 | 6 }> {
     let addresses: string[];
@@ -211,7 +240,7 @@ export function createCsipTransport(options: CsipTransportOptions): CsipTranspor
     return target;
   }
 
-  async function request(
+  async function requestOnce(
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     href: string,
     requestOptions: CsipRequestOptions = {},
@@ -302,6 +331,38 @@ export function createCsipTransport(options: CsipTransportOptions): CsipTranspor
       if (requestOptions.body !== undefined) req.write(requestOptions.body);
       req.end();
     });
+  }
+
+  async function request(
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    href: string,
+    requestOptions: CsipRequestOptions = {},
+  ): Promise<CsipResponse> {
+    const now = Date.now();
+    if (circuitOpenUntil > now) {
+      throw new CsipCircuitOpenError(circuitOpenUntil - now);
+    }
+    const isHalfOpenProbe = circuitOpenUntil !== 0;
+    if (isHalfOpenProbe && halfOpenProbeInFlight) {
+      throw new CsipCircuitOpenError(0);
+    }
+    if (isHalfOpenProbe) halfOpenProbeInFlight = true;
+    try {
+      const response = await requestOnce(method, href, requestOptions);
+      retryableFailures = 0;
+      circuitOpenUntil = 0;
+      return response;
+    } catch (error) {
+      if (error instanceof CsipError && error.retryable) {
+        retryableFailures += 1;
+        if (retryableFailures >= circuitFailureThreshold) {
+          circuitOpenUntil = Date.now() + circuitResetTimeoutMs;
+        }
+      }
+      throw error;
+    } finally {
+      if (isHalfOpenProbe) halfOpenProbeInFlight = false;
+    }
   }
 
   return {

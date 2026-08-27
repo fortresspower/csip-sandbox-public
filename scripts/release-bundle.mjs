@@ -352,10 +352,11 @@ export async function smokeInstallRelease(outputDir = DEFAULT_OUTPUT) {
     ].join('\n');
     await execFile(process.execPath, ['--eval', requireSmoke], { cwd: temporary });
     await writeFile(join(temporary, 'consumer.ts'), [
-      `import { deviceLfdi, type CsipDerControlBase } from '${modulePath}';`,
+      `import { deviceLfdi, type CsipDerControlBase, type CsipTlsMaterial } from '${modulePath}';`,
       `const control: CsipDerControlBase = { opModFixedW: -500 };`,
+      `const tls: CsipTlsMaterial = { certificate: new Uint8Array([1]), privateKey: new Uint8Array([1]) };`,
       `const value: string = deviceLfdi('partner', 'site');`,
-      `void control; void value;`,
+      `void control; void tls; void value;`,
       '',
     ].join('\n'));
     await writeFile(join(temporary, 'tsconfig.json'), stableJson({

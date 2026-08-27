@@ -105,7 +105,9 @@ Start with the [partner onboarding guide](docs/partner/onboarding.md), then use 
 [evidence checklist](docs/partner/evidence-checklist.md) before asking Fortress to connect.
 The normal deployed relationship is a partner-owned public HTTPS server on TCP 443. Fortress
 initiates every request with a connection-specific client certificate; the partner does not
-need private connectivity or inbound access to Fortress.
+need private connectivity or inbound access to Fortress. One connection serves the sites in its
+current Fortress-granted scope; telemetry and command permission are evaluated separately as
+that scope changes.
 
 ---
 
@@ -167,6 +169,18 @@ response state across restarts; separates control, standard telemetry, extension
 DERStatus, and DERCapability lanes; and requires verified TLS plus a client certificate for
 every non-loopback connection. The production-shaped partner-loop tests exercise those paths
 against the example server with randomized opaque resource identifiers.
+
+Deployed transports authenticate the partner server with Node's standard public trust store and
+authenticate Fortress with the connection-specific client certificate chain. They accept only a
+public DNS origin on HTTPS/TCP 443, re-resolve and reject private, mixed, and reserved answers,
+follow no redirects or cross-origin links, bound response bytes and deadlines, and use a
+connection-scoped circuit breaker. Custom server CA input is available only to explicit
+`local-test` fixtures.
+
+The production-shaped example server is storage-neutral at its public composition boundary.
+`PartnerPersistence`, `PartnerDomain`, `makePartnerApp`, and `makeProductionPartnerApp` accept a
+partner-chosen adapter. The repository includes memory and DynamoDB implementations; DynamoDB is
+one documented deployment composition, not a protocol or application requirement.
 
 **Control modes that visibly move the synthetic telemetry** (a deliberate subset of the
 CSIP BASIC inverter-control matrix):
@@ -252,6 +266,10 @@ the `fortress:*` mRID convention.)
 > Never expose local-demo mode to the public internet or point it at grid-connected equipment.
 
 Every non-loopback `client-core` connection requires verified TLS and a client certificate.
+The partner server certificate must chain to Node's standard public trust store; deployed
+connections neither accept nor store a partner-specific root CA. The private Fortress CA is for
+the client identity, which the partner verifies. Custom CA trust is restricted to explicit
+`local-test` fixtures.
 The example server also has an explicit `CSIP_SERVER_MODE=partner` bootstrap with durable
 persistence and certificate-derived connection authorization; it does not expose the console
 or `/test/*`. This repository deliberately includes no Fortress cloud infrastructure or
@@ -263,7 +281,8 @@ a non-sensitive health check.
 
 ## Scope
 
-In scope (v1): the **partner polling loop** — certificate-derived aggregator identity,
+In scope (v1): the **one-connection partner polling loop** — permission-derived site scope,
+certificate-derived aggregator identity,
 in-band `EndDevice` registration, assignment discovery, `MirrorUsagePoint` telemetry,
 `DERStatus`/`DERCapability`, and `DERControl` poll/apply/respond with a closed feedback loop.
 The production-shaped example server provides durable state and an allowlisted identity adapter
@@ -272,6 +291,7 @@ for a trusted mTLS terminator; the public client requires mTLS for every deploye
 Out of scope (v1): PIN-based enrollment, the Subscription/Notification function set, public-cloud
 deployment and PKI operation, and the full BASIC inverter-control matrix. TLS termination and the
 private operator channel remain deployment responsibilities, not public sandbox infrastructure.
+There is no partner-facing Fortress management API.
 
 ---
 

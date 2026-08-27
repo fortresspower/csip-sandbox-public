@@ -1,9 +1,16 @@
 export type CsipTransportEnvironment = 'deployed' | 'local-test';
 
 export interface CsipTlsMaterial {
+  /** PEM client certificate followed by any issuing intermediates. */
   certificate: Uint8Array;
   privateKey: Uint8Array;
-  certificateAuthorities: Uint8Array[];
+  /** Custom server trust is available only to explicit local-test fixtures. */
+  certificateAuthorities?: Uint8Array[];
+}
+
+export interface CsipCircuitBreakerOptions {
+  failureThreshold?: number;
+  resetTimeoutMs?: number;
 }
 
 export type DnsResolver = (hostname: string) => Promise<string[]>;
@@ -15,6 +22,7 @@ export interface CsipTransportOptions {
   timeoutMs?: number;
   maxResponseBytes?: number;
   resolveDns?: DnsResolver;
+  circuitBreaker?: CsipCircuitBreakerOptions;
 }
 
 export interface CsipResponse {
@@ -97,6 +105,13 @@ export class CsipTimeoutError extends CsipError {
   ) {
     super(`${method} ${href} timed out after ${timeoutMs}ms`, 'timeout', true);
     this.name = 'CsipTimeoutError';
+  }
+}
+
+export class CsipCircuitOpenError extends CsipError {
+  constructor(readonly retryAfterMs: number) {
+    super(`CSIP connection circuit is open; retry after ${retryAfterMs}ms`, 'server', true);
+    this.name = 'CsipCircuitOpenError';
   }
 }
 

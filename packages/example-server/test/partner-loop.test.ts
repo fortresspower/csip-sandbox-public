@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Server } from 'node:http';
 import request from 'supertest';
 import {
@@ -192,7 +192,9 @@ describe('production-shaped partner loop', () => {
   });
 
   it('redacts unexpected persistence failures as server errors', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const failure = new Error('DynamoDB table secret-name throttled');
+    failure.name = 'ThrottlingException';
     const broken = {
       async get() { throw failure; },
       async list() { throw failure; },
@@ -208,6 +210,8 @@ describe('production-shaped partner loop', () => {
     expect(response.status).toBe(500);
     expect(response.body).toEqual({ error: 'internal server error' });
     expect(response.text).not.toContain('secret-name');
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining('"category":"persistence_throttled"'));
+    logged.mockRestore();
   });
 
   it('supports bounded list pagination without numeric resource identities', async () => {

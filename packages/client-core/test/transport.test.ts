@@ -13,6 +13,7 @@ import {
   createCsipTransport,
   CsipAuthenticationError,
   CsipAuthorizationError,
+  CsipCircuitOpenError,
   CsipConfigurationError,
   CsipProtocolError,
   CsipResponseTooLargeError,
@@ -54,9 +55,13 @@ describe('connection-scoped transport', () => {
 
   afterAll(() => pki.cleanup());
 
-  const tls = (client = clientCertificate) => ({
+  const clientTls = (client = clientCertificate) => ({
     certificate: client.certificate,
     privateKey: client.privateKey,
+  });
+
+  const localTestTls = (client = clientCertificate) => ({
+    ...clientTls(client),
     certificateAuthorities: [pki.root.certificate],
   });
 
@@ -82,7 +87,7 @@ describe('connection-scoped transport', () => {
     const transport = createCsipTransport({
       baseUrl: `https://localhost:${port}`,
       environment: 'local-test',
-      tls: tls(client),
+      tls: localTestTls(client),
       resolveDns: async () => ['127.0.0.1'],
       timeoutMs: 1_000,
     });
@@ -95,6 +100,26 @@ describe('connection-scoped transport', () => {
     const response = await localHttpsTransport(port).get('/sep2/dcap');
     expect(response.status).toBe(200);
     expect(response.body).toContain('DeviceCapability');
+  });
+
+  it('uses system server trust in deployed mode and confines custom CA trust to local-test', async () => {
+    const deployed = createCsipTransport({
+      baseUrl: 'https://partner.example',
+      environment: 'deployed',
+      tls: clientTls(),
+      resolveDns: async () => ['93.184.216.34'],
+    });
+    transports.push(deployed);
+
+    expect(deployed.origin).toBe('https://partner.example');
+    expect(() => createCsipTransport({
+      baseUrl: 'https://partner.example',
+      environment: 'deployed',
+      tls: localTestTls(),
+    })).toThrow(/custom CA.*local-test/i);
+
+    const { port } = await mtlsServer();
+    expect((await localHttpsTransport(port).get('/sep2/dcap')).status).toBe(200);
   });
 
   it('fails closed for an untrusted client certificate', async () => {
@@ -120,14 +145,11 @@ describe('connection-scoped transport', () => {
   });
 
   it('rechecks DNS and rejects non-public resolution before opening TLS', async () => {
-    const { server, port } = await mtlsServer();
-    let secureConnections = 0;
-    server.on('secureConnection', () => { secureConnections += 1; });
     let resolutions = 0;
     const transport = createCsipTransport({
-      baseUrl: `https://partner.example:${port}`,
+      baseUrl: 'https://partner.example',
       environment: 'deployed',
-      tls: tls(),
+      tls: clientTls(),
       resolveDns: async () => {
         resolutions += 1;
         return ['127.0.0.1'];
@@ -137,30 +159,51 @@ describe('connection-scoped transport', () => {
 
     await expect(transport.get('/sep2/dcap')).rejects.toBeInstanceOf(CsipProtocolError);
     expect(resolutions).toBe(1);
-    expect(secureConnections).toBe(0);
 
     const unavailableDns = createCsipTransport({
       baseUrl: 'https://unavailable.example',
       environment: 'deployed',
-      tls: tls(),
+      tls: clientTls(),
       resolveDns: async () => { throw new Error('resolver unavailable'); },
     });
     transports.push(unavailableDns);
     await expect(unavailableDns.get('/sep2/dcap')).rejects.toBeInstanceOf(CsipRetryableServerError);
   });
 
+  it.each([
+    ['private IPv4', ['10.0.0.8']],
+    ['reserved IPv4', ['198.51.100.8']],
+    ['private IPv6', ['fc00::8']],
+    ['mixed public and private', ['93.184.216.34', '192.168.1.8']],
+  ])('rejects %s DNS answers', async (_label, addresses) => {
+    const transport = createCsipTransport({
+      baseUrl: 'https://partner.example',
+      environment: 'deployed',
+      tls: clientTls(),
+      resolveDns: async () => addresses,
+    });
+    transports.push(transport);
+
+    await expect(transport.get('/sep2/dcap')).rejects.toBeInstanceOf(CsipProtocolError);
+  });
+
   it('refuses IP literals, cross-origin hrefs, and redirects', async () => {
     expect(() => createCsipTransport({
       baseUrl: 'https://203.0.113.8',
       environment: 'deployed',
-      tls: tls(),
+      tls: clientTls(),
     })).toThrow(CsipConfigurationError);
+    expect(() => createCsipTransport({
+      baseUrl: 'https://partner.example:8443',
+      environment: 'deployed',
+      tls: clientTls(),
+    })).toThrow(/TCP 443/i);
 
     let resolutions = 0;
     const guarded = createCsipTransport({
       baseUrl: 'https://partner.example',
       environment: 'deployed',
-      tls: tls(),
+      tls: clientTls(),
       resolveDns: async () => {
         resolutions += 1;
         return ['93.184.216.34'];
@@ -198,7 +241,6 @@ describe('connection-scoped transport', () => {
       tls: {
         certificate: new Uint8Array(),
         privateKey: new Uint8Array(),
-        certificateAuthorities: [],
       },
     })).toThrow(CsipConfigurationError);
 
@@ -237,5 +279,34 @@ describe('connection-scoped transport', () => {
     await expect(transport.get('/retry')).rejects.toBeInstanceOf(CsipRetryableServerError);
     await expect(transport.get('/large')).rejects.toBeInstanceOf(CsipResponseTooLargeError);
     await expect(transport.get('/slow')).rejects.toBeInstanceOf(CsipTimeoutError);
+  });
+
+  it('opens a connection-scoped circuit after retryable failures and probes again after cooldown', async () => {
+    let available = false;
+    let requests = 0;
+    const server = http.createServer((_request, response) => {
+      requests += 1;
+      if (!available) return response.writeHead(503).end('later');
+      response.end('ok');
+    });
+    servers.push(server);
+    const port = await listen(server);
+    const transport = createCsipTransport({
+      baseUrl: `http://localhost:${port}`,
+      environment: 'local-test',
+      resolveDns: async () => ['127.0.0.1'],
+      circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 5 },
+    });
+    transports.push(transport);
+
+    await expect(transport.get('/healthz')).rejects.toBeInstanceOf(CsipRetryableServerError);
+    await expect(transport.get('/healthz')).rejects.toBeInstanceOf(CsipRetryableServerError);
+    await expect(transport.get('/healthz')).rejects.toBeInstanceOf(CsipCircuitOpenError);
+    expect(requests).toBe(2);
+
+    available = true;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect((await transport.get('/healthz')).body).toBe('ok');
+    expect(requests).toBe(3);
   });
 });
