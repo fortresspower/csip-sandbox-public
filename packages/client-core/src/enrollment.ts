@@ -172,7 +172,8 @@ export class EndDeviceEnrollment {
         hrefs.set(lFDI, winner.href);
       }
     }
-    const devices = await mapConcurrent(lFDIs, this.#concurrency, (lFDI) => this.#persist(lFDI, hrefs.get(lFDI)), options.signal);
+    const devices = lFDIs.map((lFDI) => this.#storedDevice(lFDI, hrefs.get(lFDI)));
+    if (devices.length > 0) await this.#store.saveEndDevices(devices);
     return { devices, inventoryChanged: missing.length > 0 };
   }
 
@@ -204,11 +205,9 @@ export class EndDeviceEnrollment {
     return targets;
   }
 
-  async #persist(lFDI: string, href: string | undefined): Promise<StoredEndDevice> {
+  #storedDevice(lFDI: string, href: string | undefined): StoredEndDevice {
     if (!href) throw new CsipDiscoveryError(`EndDevice ${lFDI} does not expose a resource href`);
     this.#resources.canonicalHref(href);
-    const stored = { lFDI, href, eligible: true };
-    await this.#store.saveEndDevice(stored);
-    return stored;
+    return { lFDI, href, eligible: true };
   }
 }

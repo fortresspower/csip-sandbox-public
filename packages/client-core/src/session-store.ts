@@ -58,6 +58,8 @@ export interface StoredLifecycleEffect {
 export interface SessionStore {
   loadEndDevice(lFDI: string): Promise<StoredEndDevice | undefined>;
   saveEndDevice(device: StoredEndDevice): Promise<void>;
+  /** Persists one reconciliation batch atomically from the caller's perspective. */
+  saveEndDevices(devices: readonly StoredEndDevice[]): Promise<void>;
   removeEndDevice(lFDI: string): Promise<void>;
   loadResource(href: string): Promise<CachedResource | undefined>;
   saveResource(href: string, resource: CachedResource): Promise<void>;
@@ -95,6 +97,10 @@ export class MemorySessionStore implements SessionStore {
 
   async saveEndDevice(device: StoredEndDevice): Promise<void> {
     this.#devices.set(device.lFDI, copy(device));
+  }
+
+  async saveEndDevices(devices: readonly StoredEndDevice[]): Promise<void> {
+    for (const device of devices) this.#devices.set(device.lFDI, copy(device));
   }
 
   async removeEndDevice(lFDI: string): Promise<void> {

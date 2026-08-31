@@ -124,10 +124,16 @@ class ScaleTransport implements CsipTransport {
 /** Models a durable adapter without making the benchmark retain a second in-memory fleet copy. */
 class ScaleSessionStore extends MemorySessionStore {
   savedEndDevices = 0;
+  endDeviceBatchWrites = 0;
   savedAssignmentDevices = 0;
 
   override async saveEndDevice(_device: StoredEndDevice): Promise<void> {
-    this.savedEndDevices += 1;
+    throw new Error('scale enrollment used the per-device durable write path');
+  }
+
+  override async saveEndDevices(devices: readonly StoredEndDevice[]): Promise<void> {
+    this.endDeviceBatchWrites += 1;
+    this.savedEndDevices += devices.length;
   }
 
   override async saveAssignmentSnapshot(snapshot: AssignmentSnapshot): Promise<void> {
@@ -178,6 +184,8 @@ async function main(): Promise<void> {
   const lFDIs = Array.from({ length: SITE_COUNT }, (_, index) => lfdi(index));
   const known = new Set(lFDIs);
   let clock = 0;
+  let telemetryBatchReads = 0;
+  let maxTelemetrySourceBatch = 0;
   const transport = new ScaleTransport(TELEMETRY_LATENCY_MS);
   const store = new ScaleSessionStore();
   const resources = new ResourceClient({ transport, store });
@@ -204,6 +212,7 @@ async function main(): Promise<void> {
   assert.equal((enrollmentResult as { snapshot: unknown }).snapshot, fleet);
   assert.equal((enrollmentResult as { inventoryChanged: boolean }).inventoryChanged, false);
   assert.equal(store.savedEndDevices, SITE_COUNT);
+  assert.equal(store.endDeviceBatchWrites, 1);
   enrollmentResult = undefined;
   sampleHeap();
   forceGc();
@@ -221,7 +230,14 @@ async function main(): Promise<void> {
 
   const publisher = new TelemetryPublisher({
     resources,
-    source: { async read() { return { timestamp: clock, activePowerW: 1 }; } },
+    source: {
+      async read() { throw new Error('scale telemetry used the per-device source path'); },
+      async readMany(lFDIs) {
+        telemetryBatchReads += 1;
+        maxTelemetrySourceBatch = Math.max(maxTelemetrySourceBatch, lFDIs.length);
+        return new Map(lFDIs.map((deviceLfdi) => [deviceLfdi, { timestamp: clock, activePowerW: 1 }]));
+      },
+    },
     now: () => clock,
     concurrency: TELEMETRY_CONCURRENCY,
     workBatchSize: 500,
@@ -243,6 +259,8 @@ async function main(): Promise<void> {
   assert.equal(publish.quarantined, 0);
   assert.equal(publish.backpressured, 0);
   assert.ok(publish.sent >= 19_000 && publish.sent <= 21_000, `steady pass sent ${publish.sent}, expected about 20,000`);
+  assert.ok(telemetryBatchReads <= Math.ceil(SITE_COUNT / PAGE_ITEMS));
+  assert.ok(maxTelemetrySourceBatch <= PAGE_ITEMS);
   sampleHeap();
 
   const abortTransport = new AbortEnrollmentTransport();
@@ -323,6 +341,9 @@ async function main(): Promise<void> {
       maxActiveEffects: transport.counters.maxActiveEffects,
       steadyPublishes: publish.sent,
       steadyPublishesPerSecond: Number((publish.sent / (phaseMs.telemetryPublish / 1_000)).toFixed(1)),
+      telemetryBatchReads,
+      maxTelemetrySourceBatch,
+      endDeviceBatchWrites: store.endDeviceBatchWrites,
       abortMs: Number(abortMs.toFixed(1)),
       abortRegistrationsStarted: abortTransport.posts,
       abortMaxActive: abortTransport.maxActive,

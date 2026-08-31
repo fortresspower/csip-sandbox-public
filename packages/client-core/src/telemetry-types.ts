@@ -36,6 +36,8 @@ export interface TelemetrySample {
 
 export interface TelemetrySource {
   read(lFDI: string): Promise<TelemetrySample>;
+  /** Optional batch path. Per-device failures are returned as Error values. */
+  readMany?(lFDIs: readonly string[]): Promise<ReadonlyMap<string, TelemetrySample | Error>>;
 }
 
 export interface TelemetryProfile {

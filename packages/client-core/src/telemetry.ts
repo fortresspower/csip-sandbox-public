@@ -234,18 +234,44 @@ export class TelemetryPublisher {
     for (let offset = 0; offset < profiles.length; offset += batchSize) {
       throwIfAborted(options.signal);
       const batch = profiles.slice(offset, offset + batchSize);
-      const queued = await mapConcurrent(batch, this.#concurrency, async (profile) => {
+      const due = batch.flatMap((profile) => {
         const now = this.#now();
         const standardKey = `${profile.lFDI}:standard`;
         const extensionKey = `${profile.lFDI}:extensions`;
         const standardDue = this.#isRunDue(standardKey, now, profile.intervalSeconds);
         const extensionsDue = profile.extensionMupHref !== undefined
           && this.#isRunDue(extensionKey, now, profile.extensionIntervalSeconds ?? MIN_TELEMETRY_INTERVAL_SECONDS);
-        if (!standardDue && !extensionsDue) return emptyResult();
-        const result = await this.#queue(profile, { standard: standardDue, extensions: extensionsDue });
+        return standardDue || extensionsDue
+          ? [{ profile, now, standardKey, extensionKey, lanes: { standard: standardDue, extensions: extensionsDue } }]
+          : [];
+      });
+      let samples: ReadonlyMap<string, TelemetrySample | Error> | undefined;
+      if (due.length > 0 && this.#source.readMany) {
+        try {
+          samples = await this.#source.readMany(due.map(({ profile }) => profile.lFDI));
+        } catch (error) {
+          for (const { profile } of due) {
+            this.#quarantineEntry({ lFDI: profile.lFDI, reason: errorMessage(error) });
+          }
+          total.quarantined += due.length;
+          addResult(total, await this.#retryPending(attempted, options));
+          continue;
+        }
+      }
+      const queued = await mapConcurrent(due, this.#concurrency, async ({
+        profile, now, standardKey, extensionKey, lanes,
+      }) => {
+        const batchSample = samples?.get(profile.lFDI);
+        const result = samples
+          ? batchSample instanceof Error
+            ? this.#quarantineSample(profile.lFDI, batchSample)
+            : batchSample === undefined
+              ? this.#quarantineSample(profile.lFDI, new Error('batch telemetry source omitted the requested LFDI'))
+              : await this.#queue(profile, lanes, batchSample)
+          : await this.#queue(profile, lanes);
         if (result.backpressured === 0) {
-          if (standardDue) this.#lastRun.set(standardKey, now);
-          if (extensionsDue) this.#lastRun.set(extensionKey, now);
+          if (lanes.standard) this.#lastRun.set(standardKey, now);
+          if (lanes.extensions) this.#lastRun.set(extensionKey, now);
         }
         return result;
       }, options.signal);
@@ -262,10 +288,14 @@ export class TelemetryPublisher {
     return queued;
   }
 
-  async #queue(profile: TelemetryProfile, lanes: TelemetryLanes): Promise<TelemetryPublishResult> {
+  async #queue(
+    profile: TelemetryProfile,
+    lanes: TelemetryLanes,
+    batchSample?: TelemetrySample,
+  ): Promise<TelemetryPublishResult> {
     let jobs: TelemetryJob[];
     try {
-      const sample = await this.#source.read(profile.lFDI);
+      const sample = batchSample ?? await this.#source.read(profile.lFDI);
       jobs = buildJobs(profile, validateSample(sample), lanes);
     } catch (error) {
       this.#quarantineEntry({ lFDI: profile.lFDI, reason: errorMessage(error) });
@@ -279,6 +309,11 @@ export class TelemetryPublisher {
       this.#pending.set(job.id, job);
     }
     return { ...emptyResult(), queued: fresh.length };
+  }
+
+  #quarantineSample(lFDI: string, error: Error): TelemetryPublishResult {
+    this.#quarantineEntry({ lFDI, reason: errorMessage(error) });
+    return { ...emptyResult(), quarantined: 1 };
   }
 
   retryPending(options: CsipWorkOptions = {}): Promise<TelemetryPublishResult> {

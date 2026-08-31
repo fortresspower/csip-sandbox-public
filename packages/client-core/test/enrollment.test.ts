@@ -11,6 +11,21 @@ import { link, readBody, startFixture, xml, type RunningFixture } from './fixtur
 const LFDI = 'abcdef0123456789abcdef0123456789abcdef01';
 const pathOf = (request: IncomingMessage): string => new URL(request.url ?? '/', 'http://fixture').pathname;
 
+class CountingStore extends MemorySessionStore {
+  batchWrites = 0;
+  singleWrites = 0;
+
+  override async saveEndDevice(device: Parameters<MemorySessionStore['saveEndDevice']>[0]): Promise<void> {
+    this.singleWrites += 1;
+    await super.saveEndDevice(device);
+  }
+
+  override async saveEndDevices(devices: Parameters<MemorySessionStore['saveEndDevices']>[0]): Promise<void> {
+    this.batchWrites += 1;
+    await super.saveEndDevices(devices);
+  }
+}
+
 describe('in-band EndDevice enrollment', () => {
   const fixtures: RunningFixture[] = [];
   afterEach(async () => Promise.all(fixtures.splice(0).map((fixture) => fixture.close())));
@@ -142,7 +157,7 @@ describe('in-band EndDevice enrollment', () => {
       response.writeHead(404).end();
     });
     fixtures.push(fixture);
-    const store = new MemorySessionStore();
+    const store = new CountingStore();
     const resources = new ResourceClient({ transport: fixture.transport, store });
     const enrollment = new EndDeviceEnrollment({
       resources,
@@ -162,11 +177,15 @@ describe('in-band EndDevice enrollment', () => {
     expect(maxActivePosts).toBeGreaterThan(1);
     expect(maxActivePosts).toBeLessThanOrEqual(3);
     expect(registered.size).toBe(lFDIs.length);
+    expect(store.batchWrites).toBe(1);
+    expect(store.singleWrites).toBe(0);
 
     const unchanged = await enrollment.reconcileFleet(`${fixture.prefix}/capability`, lFDIs, { snapshot: changed.snapshot });
     expect(unchanged.inventoryChanged).toBe(false);
     expect(unchanged.snapshot).toBe(changed.snapshot);
     expect(listReads).toBe(2);
+    expect(store.batchWrites).toBe(2);
+    expect(store.singleWrites).toBe(0);
 
     await expect(enrollment.reconcileFleet(`${fixture.prefix}/other-capability`, lFDIs, { snapshot: changed.snapshot }))
       .rejects.toThrow(/different DeviceCapability/i);

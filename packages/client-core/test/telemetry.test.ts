@@ -351,6 +351,62 @@ describe('telemetry publication', () => {
     expect(publisher.diagnostics().pending).toBe(0);
   });
 
+  it('reads each due work batch once and isolates per-device batch failures', async () => {
+    const batchSizes: number[] = [];
+    let sends = 0;
+    const transport: CsipTransport = {
+      origin: 'https://partner.example',
+      async request(method) {
+        if (method === 'GET') throw new Error('unexpected GET');
+        sends += 1;
+        return { status: 201, headers: {}, body: '' };
+      },
+      get(href) { return this.request('GET', href); },
+      post(href, body) { return this.request('POST', href, { body }); },
+      put(href, body) { return this.request('PUT', href, { body }); },
+      close() {},
+    };
+    const profiles: TelemetryProfile[] = Array.from({ length: 12 }, (_, index) => {
+      const lFDI = index.toString(16).padStart(40, '0');
+      return {
+        lFDI,
+        intervalSeconds: 300,
+        rateClamped: false,
+        standardMupHref: `/posting/${lFDI}`,
+        standardMupMrid: `mup-${lFDI}`,
+      };
+    });
+    const failed = profiles[6].lFDI;
+    const publisher = new TelemetryPublisher({
+      resources: new ResourceClient({ transport, store: new MemorySessionStore() }),
+      source: {
+        async read() { throw new Error('per-device source path should not be used'); },
+        async readMany(lFDIs) {
+          batchSizes.push(lFDIs.length);
+          return new Map(lFDIs.map((lFDI) => [
+            lFDI,
+            lFDI === failed ? new Error('device sample unavailable') : { timestamp: 1, activePowerW: 1 },
+          ]));
+        },
+      },
+      workBatchSize: 5,
+      staggerInitialRun: false,
+    });
+
+    await expect(publisher.runDue(profiles)).resolves.toEqual({
+      queued: 11,
+      sent: 11,
+      retryableFailures: 0,
+      quarantined: 1,
+      backpressured: 0,
+    });
+    expect(batchSizes).toEqual([5, 5, 2]);
+    expect(sends).toBe(11);
+    expect(publisher.diagnostics().quarantine).toEqual([
+      expect.objectContaining({ lFDI: failed, reason: 'device sample unavailable' }),
+    ]);
+  });
+
   it('rejects an oversized direct publication roster before reading or sending', async () => {
     let reads = 0;
     const transport = new MemoryTransport();

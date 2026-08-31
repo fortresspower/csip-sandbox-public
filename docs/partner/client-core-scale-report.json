@@ -23,23 +23,26 @@
     "abortMs": 250
   },
   "actuals": {
-    "totalWallMs": 41036.2,
-    "controlRoundMs": 9214.3,
-    "sampledPeakHeapDeltaMiB": 195.5,
+    "totalWallMs": 45490.1,
+    "controlRoundMs": 12528.7,
+    "sampledPeakHeapDeltaMiB": 194.3,
     "phaseMs": {
-      "fleetSnapshot": 5480.8,
-      "enrollment": 1152.9,
-      "assignment": 2580.6,
-      "telemetryDiscovery": 14434.4,
-      "telemetryPublish": 17001.7
+      "fleetSnapshot": 8117.1,
+      "enrollment": 1145.1,
+      "assignment": 3266.5,
+      "telemetryDiscovery": 16148.5,
+      "telemetryPublish": 16490.1
     },
     "getRequests": 603,
     "postRequests": 19905,
     "maxPageItems": 500,
     "maxActiveEffects": 32,
     "steadyPublishes": 19905,
-    "steadyPublishesPerSecond": 1170.8,
-    "abortMs": 33.6,
+    "steadyPublishesPerSecond": 1207.1,
+    "telemetryBatchReads": 200,
+    "maxTelemetrySourceBatch": 165,
+    "endDeviceBatchWrites": 1,
+    "abortMs": 42.8,
     "abortRegistrationsStarted": 8,
     "abortMaxActive": 8
   },
