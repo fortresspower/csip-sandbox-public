@@ -4,8 +4,11 @@ import {
   ControlPoller,
   LifecycleResponder,
   MemorySessionStore,
+  queueControlResponse,
   ResourceClient,
   type AssignmentSnapshot,
+  type ControlIntent,
+  type StoredResponseEffect,
 } from '../src/index.js';
 import { controlXml, MemoryTransport } from './control-helpers.js';
 
@@ -13,6 +16,40 @@ const HILDA = '1111111111111111111111111111111111111111';
 const LAB = '2222222222222222222222222222222222222222';
 
 describe('control lifecycle responses', () => {
+  it('uses one batch read and write for a fleet response', async () => {
+    const lFDIs = Array.from({ length: 10_000 }, (_, index) => index.toString(16).padStart(40, '0'));
+    class BatchStore extends MemorySessionStore {
+      reads = 0;
+      writes = 0;
+      override async loadResponseEffect(): Promise<StoredResponseEffect | undefined> {
+        throw new Error('fleet response used the per-device read path');
+      }
+      override async saveResponseEffect(): Promise<void> {
+        throw new Error('fleet response used the per-device write path');
+      }
+      override async loadResponseEffects(ids: readonly string[]) {
+        this.reads += 1;
+        return ids.map(() => undefined);
+      }
+      override async saveResponseEffects(effects: readonly StoredResponseEffect[]) {
+        this.writes += 1;
+        return super.saveResponseEffects(effects);
+      }
+    }
+    const store = new BatchStore();
+    const intent: ControlIntent = {
+      family: 'csip', connectionId: 'connection-a', internalEventId: 'internal-a',
+      wireMrid: 'wire-a', programMrid: 'program-a', programPrimacy: 1,
+      assignedLFDIs: lFDIs, responseRequired: '02', replyTo: '/responses',
+      creationTime: 1, eventStatus: 0, interval: { start: 1, duration: 60 },
+      control: { opModFixedW: -500 },
+    };
+
+    expect(await queueControlResponse(store, intent, 252, 2)).toBe(lFDIs.length);
+    expect({ reads: store.reads, writes: store.writes }).toEqual({ reads: 1, writes: 1 });
+    expect(await store.listPendingResponses()).toHaveLength(lFDIs.length);
+  });
+
   it('posts only requested outcomes to replyTo and retries a transient partner outage', async () => {
     const transport = new MemoryTransport();
     transport.getBodies.set('/random/control-feed', () => controlXml({

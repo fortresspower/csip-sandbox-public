@@ -64,6 +64,11 @@ export interface TelemetryDiscoveryOptions extends CsipWorkOptions {
   snapshot?: EndDeviceFleetSnapshot;
 }
 
+export interface TelemetryPublishOptions extends CsipWorkOptions {
+  /** Current authority set. Pending work outside it is discarded before any transport call. */
+  eligibleLFDIs?: ReadonlySet<string>;
+}
+
 export class TelemetryPublisher {
   readonly #resources: ResourceClient;
   readonly #source: TelemetrySource;
@@ -222,14 +227,16 @@ export class TelemetryPublisher {
 
   async runDue(
     profiles: readonly TelemetryProfile[],
-    options: CsipWorkOptions = {},
+    options: TelemetryPublishOptions = {},
   ): Promise<TelemetryPublishResult> {
     if (profiles.length > this.#maxProfiles) {
       throw new CsipDiscoveryError(`telemetry publication exceeded the ${this.#maxProfiles}-profile limit`);
     }
+    const eligibleLFDIs = options.eligibleLFDIs ?? new Set(profiles.map(({ lFDI }) => lFDI));
+    const publishOptions = { ...options, eligibleLFDIs };
     const total = emptyResult();
     const attempted = new Set<string>();
-    addResult(total, await this.#retryPending(attempted, options));
+    addResult(total, await this.#retryPending(attempted, publishOptions));
     const batchSize = Math.min(this.#workBatchSize, Math.max(1, Math.floor(this.#maxQueue / MAX_JOBS_PER_PROFILE)));
     for (let offset = 0; offset < profiles.length; offset += batchSize) {
       throwIfAborted(options.signal);
@@ -254,7 +261,7 @@ export class TelemetryPublisher {
             this.#quarantineEntry({ lFDI: profile.lFDI, reason: errorMessage(error) });
           }
           total.quarantined += due.length;
-          addResult(total, await this.#retryPending(attempted, options));
+          addResult(total, await this.#retryPending(attempted, publishOptions));
           continue;
         }
       }
@@ -276,14 +283,17 @@ export class TelemetryPublisher {
         return result;
       }, options.signal);
       for (const result of queued) addResult(total, result);
-      addResult(total, await this.#retryPending(attempted, options));
+      addResult(total, await this.#retryPending(attempted, publishOptions));
     }
     return total;
   }
 
-  async publish(profile: TelemetryProfile, options: CsipWorkOptions = {}): Promise<TelemetryPublishResult> {
+  async publish(profile: TelemetryProfile, options: TelemetryPublishOptions = {}): Promise<TelemetryPublishResult> {
     const queued = await this.#queue(profile, { standard: true, extensions: true });
-    const flushed = await this.#retryPending(new Set<string>(), options);
+    const flushed = await this.#retryPending(new Set<string>(), {
+      ...options,
+      eligibleLFDIs: options.eligibleLFDIs ?? new Set([profile.lFDI]),
+    });
     addResult(queued, flushed);
     return queued;
   }
@@ -316,11 +326,11 @@ export class TelemetryPublisher {
     return { ...emptyResult(), quarantined: 1 };
   }
 
-  retryPending(options: CsipWorkOptions = {}): Promise<TelemetryPublishResult> {
+  retryPending(options: TelemetryPublishOptions = {}): Promise<TelemetryPublishResult> {
     return this.#retryPending(new Set<string>(), options);
   }
 
-  async #retryPending(attempted: Set<string>, options: CsipWorkOptions): Promise<TelemetryPublishResult> {
+  async #retryPending(attempted: Set<string>, options: TelemetryPublishOptions): Promise<TelemetryPublishResult> {
     if (this.#drainPromise) {
       const joined = await this.#drainPromise;
       for (const id of joined.attempted) attempted.add(id);
@@ -337,10 +347,15 @@ export class TelemetryPublisher {
     return (await locked).result;
   }
 
-  async #performDrain(attempted: Set<string>, options: CsipWorkOptions): Promise<TelemetryDrainOutcome> {
+  async #performDrain(attempted: Set<string>, options: TelemetryPublishOptions): Promise<TelemetryDrainOutcome> {
     const result = emptyResult();
     while (true) {
       throwIfAborted(options.signal);
+      if (options.eligibleLFDIs) {
+        for (const [id, job] of this.#pending) {
+          if (!options.eligibleLFDIs.has(job.lFDI)) this.#pending.delete(id);
+        }
+      }
       const jobs = [...this.#pending.values()].filter((job) => !attempted.has(job.id));
       if (jobs.length === 0) return { result, attempted };
       for (const job of jobs) attempted.add(job.id);

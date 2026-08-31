@@ -8,9 +8,12 @@ import {
   DEFAULT_MAX_PAGE_ITEMS,
   EndDeviceEnrollment,
   MemorySessionStore,
+  queueControlResponse,
   ResourceClient,
   TelemetryPublisher,
   type AssignmentSnapshot,
+  type ControlIntent,
+  type StoredResponseEffect,
   type StoredEndDevice,
   type CsipRequestOptions,
   type CsipResponse,
@@ -126,6 +129,9 @@ class ScaleSessionStore extends MemorySessionStore {
   savedEndDevices = 0;
   endDeviceBatchWrites = 0;
   savedAssignmentDevices = 0;
+  responseBatchReads = 0;
+  responseBatchWrites = 0;
+  savedResponseEffects = 0;
 
   override async saveEndDevice(_device: StoredEndDevice): Promise<void> {
     throw new Error('scale enrollment used the per-device durable write path');
@@ -138,6 +144,24 @@ class ScaleSessionStore extends MemorySessionStore {
 
   override async saveAssignmentSnapshot(snapshot: AssignmentSnapshot): Promise<void> {
     this.savedAssignmentDevices = snapshot.devices.length;
+  }
+
+  override async loadResponseEffect(): Promise<StoredResponseEffect | undefined> {
+    throw new Error('scale response queue used the per-device durable read path');
+  }
+
+  override async loadResponseEffects(ids: readonly string[]): Promise<Array<StoredResponseEffect | undefined>> {
+    this.responseBatchReads += 1;
+    return ids.map(() => undefined);
+  }
+
+  override async saveResponseEffect(): Promise<void> {
+    throw new Error('scale response queue used the per-device durable write path');
+  }
+
+  override async saveResponseEffects(effects: readonly StoredResponseEffect[]): Promise<void> {
+    this.responseBatchWrites += 1;
+    this.savedResponseEffects += effects.length;
   }
 }
 
@@ -226,7 +250,25 @@ async function main(): Promise<void> {
   snapshot = undefined;
   sampleHeap();
   forceGc();
-  const controlWallMs = phaseMs.fleetSnapshot + phaseMs.enrollment + phaseMs.assignment;
+
+  const fleetIntent: ControlIntent = {
+    family: 'csip', connectionId: 'scale', internalEventId: 'scale-control',
+    wireMrid: 'scale-wire', programMrid: 'scale-program', programPrimacy: 1,
+    assignedLFDIs: lFDIs, responseRequired: '02', replyTo: '/responses',
+    creationTime: 1, eventStatus: 0, interval: { start: 1, duration: 60 },
+    control: { opModFixedW: -500 },
+  };
+  started = performance.now();
+  const responseEffects = await queueControlResponse(store, fleetIntent, 252, 2);
+  phaseMs.controlResponseQueue = performance.now() - started;
+  assert.equal(responseEffects, SITE_COUNT);
+  assert.equal(store.savedResponseEffects, SITE_COUNT);
+  assert.equal(store.responseBatchReads, 1);
+  assert.equal(store.responseBatchWrites, 1);
+  sampleHeap();
+  forceGc();
+  const controlWallMs = phaseMs.fleetSnapshot + phaseMs.enrollment
+    + phaseMs.assignment + phaseMs.controlResponseQueue;
 
   const publisher = new TelemetryPublisher({
     resources,
@@ -344,6 +386,8 @@ async function main(): Promise<void> {
       telemetryBatchReads,
       maxTelemetrySourceBatch,
       endDeviceBatchWrites: store.endDeviceBatchWrites,
+      responseBatchReads: store.responseBatchReads,
+      responseBatchWrites: store.responseBatchWrites,
       abortMs: Number(abortMs.toFixed(1)),
       abortRegistrationsStarted: abortTransport.posts,
       abortMaxActive: abortTransport.maxActive,

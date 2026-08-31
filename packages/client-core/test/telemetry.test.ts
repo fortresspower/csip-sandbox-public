@@ -242,6 +242,28 @@ describe('telemetry publication', () => {
     expect(publisher.diagnostics().quarantine.at(-1)?.reason).toMatch(/activePowerW/i);
   });
 
+  it('drops queued telemetry when the current authority set revokes its LFDI', async () => {
+    const transport = new MemoryTransport();
+    telemetryGraph(transport, 300);
+    const publisher = new TelemetryPublisher({
+      resources: new ResourceClient({ transport, store: new MemorySessionStore() }),
+      source: { async read() { return fullSample(); } },
+      now: () => 1_725_000_000,
+      maxQueue: 8,
+    });
+    const [profile] = await publisher.discover('/graph/capability', new Set([HILDA]));
+
+    transport.failNextPost = true;
+    expect(await publisher.publish(profile)).toMatchObject({ retryableFailures: 1 });
+    const postsBeforeRevocation = transport.requests.filter(({ method }) => method === 'POST').length;
+    expect(publisher.diagnostics().pending).toBe(1);
+
+    expect(await publisher.retryPending({ eligibleLFDIs: new Set() }))
+      .toEqual({ queued: 0, sent: 0, retryableFailures: 0, quarantined: 0, backpressured: 0 });
+    expect(publisher.diagnostics().pending).toBe(0);
+    expect(transport.requests.filter(({ method }) => method === 'POST')).toHaveLength(postsBeforeRevocation);
+  });
+
   it('deterministically staggers both lanes, avoids a startup burst, and serves every profile within its interval', async () => {
     const makeProfiles = (): TelemetryProfile[] => Array.from({ length: 100 }, (_, index) => {
       const lFDI = (index + 500).toString(16).padStart(40, '0');

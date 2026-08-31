@@ -7,7 +7,7 @@
     "./state-machine": "./src/state-machine.ts"
   },
   "dependencies": {
-    "@fortress-csip/client-core": "0.3.1",
+    "@fortress-csip/client-core": "0.3.2",
     "@fortress-csip/protocol": "0.1.0",
     "express": "^4.21.0"
   },
