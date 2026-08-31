@@ -33,8 +33,23 @@ the server supports:
 - DER status and capability destinations when advertised.
 
 `pollRate` and `postRate` are positive seconds. Fortress honors slower telemetry rates and clamps
-faster telemetry requests to a five-minute minimum. Lists support `s` and `l` pagination. Links
-may change, but must remain same-origin and form a bounded, unambiguous graph.
+faster telemetry requests to a five-minute minimum. Lists support `s` and `l` pagination. Fortress
+requests `l=500` when an advertised initial list link omits `l`; the partner must accept and return
+up to 500 items per page, and every `next` link must preserve the server-selected page size. A
+smaller page remains protocol-correct, but it does not meet the six-figure production cadence gate.
+Links may change, but must remain same-origin and form a bounded, unambiguous graph.
+
+### 100,000-site telemetry capacity
+
+Fortress staggers the first `runDue` work deterministically across each route's advertised interval;
+it does not burst 100,000 posts at connection startup. At a 300-second standard telemetry interval,
+100,000 sites require an average of about 333 writes/second. Client-core permits at most 32
+simultaneous telemetry source reads or writes (enrollment and assignment remain capped at eight).
+
+The local scale gate injects 20 ms write latency and proves a 60-second slice completes inside the
+manager's 20-second reporting timeout. That is fixture evidence, not a claim about a deployed
+partner. The dev rehearsal must measure the partner's actual p95 latency, sustainable request rate,
+throttling, and retry behavior at the agreed fleet tier before production approval.
 
 ## Device identity and assignments
 

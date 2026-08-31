@@ -56,6 +56,8 @@ export interface TelemetryPublishResult {
   sent: number;
   retryableFailures: number;
   quarantined: number;
+  /** Jobs deferred without loss because the bounded retry queue had no capacity. */
+  backpressured: number;
 }
 
 export interface TelemetryQuarantineEntry {

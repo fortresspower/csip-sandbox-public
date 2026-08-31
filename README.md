@@ -177,6 +177,25 @@ follow no redirects or cross-origin links, bound response bytes and deadlines, a
 connection-scoped circuit breaker. Custom server CA input is available only to explicit
 `local-test` fixtures.
 
+For six-figure fleets, one caller-owned round starts with
+`ResourceClient.endDeviceFleet()`. The immutable snapshot is bound to that exact
+`ResourceClient`, DeviceCapability, and EndDeviceList; pass it to `reconcileFleet`, assignment
+reconciliation, and telemetry discovery so inventory is parsed once. A registration change
+returns a refreshed snapshot, while an unchanged fleet reuses the exact input snapshot. The
+library never hides a parsed snapshot across rounds.
+
+List discovery requests `l=500` when the advertised initial link omits a limit. `ResourceClient`
+still rejects pages over 500, more than 200,000 list items, link cycles, or more than 2,048 pages.
+`TelemetryPublisher.runDue()` deterministically spreads first-run work over each route's advertised
+300/600-second interval; direct `publish()` remains immediate. Telemetry source reads and sends are
+bounded at 32 concurrent effects, while enrollment and assignment remain capped at eight.
+
+The checked-in [100,000-site scale evidence](docs/partner/client-core-scale-report.json) used
+500-item pages and injected 20 ms per telemetry write. It completed one staggered 60-second slice
+in 17.0 seconds at 32-way concurrency. The fleet's sustained floor is about 333 standard telemetry
+writes/second (`100,000 / 300`); a partner's real latency, throughput, and error behavior must be
+measured in dev before production and must not be inferred from this in-memory fixture.
+
 The production-shaped example server is storage-neutral at its public composition boundary.
 `PartnerPersistence`, `PartnerDomain`, `makePartnerApp`, and `makeProductionPartnerApp` accept a
 partner-chosen adapter. The repository includes memory and DynamoDB implementations; DynamoDB is

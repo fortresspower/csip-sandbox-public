@@ -36,7 +36,7 @@ function graphHandler(prefix: string, state: GraphState) {
       return;
     }
 
-    const path = request.url ?? '';
+    const path = new URL(request.url ?? '/', 'http://fixture').pathname;
     if (path === `${prefix}/capability`) {
       send(response, xml('DeviceCapability', link('EndDeviceListLink', `${prefix}/devices/page-a`), ' pollRate="17"'), state.etag);
       return;
@@ -165,7 +165,7 @@ describe('assignment discovery', () => {
     };
     let fixture!: RunningFixture;
     fixture = await startFixture((request, response) => {
-      if (request.url === `${fixture.prefix}/devices/page-a`) {
+      if (new URL(request.url ?? '/', 'http://fixture').pathname === `${fixture.prefix}/devices/page-a`) {
         const item = `<EndDevice href="${fixture.prefix}/devices/hilda"><lFDI>${HILDA}</lFDI>${link('FunctionSetAssignmentsListLink', `${fixture.prefix}/assign/hilda`)}</EndDevice>`;
         send(response, xml('EndDeviceList', item, ' all="1" results="1"'), state.etag);
         return;
@@ -202,5 +202,58 @@ describe('assignment discovery', () => {
     expect(snapshot.devices.map((device) => device.lFDI)).toEqual([HILDA, LAB]);
     expect(assignments(snapshot, HILDA)).toEqual(['alpha']);
     expect(assignments(snapshot, LAB)).toEqual([]);
+  });
+
+  it('bounds nested reads and deduplicates identical assignment hrefs', async () => {
+    const lFDIs = Array.from({ length: 12 }, (_, index) => (index + 10).toString(16).padStart(40, '0'));
+    let fixture!: RunningFixture;
+    let activeNestedReads = 0;
+    let maxActiveNestedReads = 0;
+    const nestedReads = new Map<string, number>();
+    fixture = await startFixture(async (request, response) => {
+      const path = new URL(request.url ?? '/', 'http://fixture').pathname;
+      if (path === `${fixture.prefix}/capability`) {
+        response.end(xml('DeviceCapability', link('EndDeviceListLink', `${fixture.prefix}/devices`), ' pollRate="30"'));
+        return;
+      }
+      if (path === `${fixture.prefix}/devices`) {
+        const items = lFDIs.map((lFDI, index) =>
+          `<EndDevice href="${fixture.prefix}/device/${lFDI}"><lFDI>${lFDI}</lFDI>${link('FunctionSetAssignmentsListLink', `${fixture.prefix}/assign/${index % 3}`)}</EndDevice>`,
+        ).join('');
+        response.end(xml('EndDeviceList', items, ` all="${lFDIs.length}" results="${lFDIs.length}"`));
+        return;
+      }
+      if (path.startsWith(`${fixture.prefix}/assign/`) || path === `${fixture.prefix}/programs/shared`) {
+        activeNestedReads += 1;
+        maxActiveNestedReads = Math.max(maxActiveNestedReads, activeNestedReads);
+        nestedReads.set(path, (nestedReads.get(path) ?? 0) + 1);
+        await new Promise((resolve) => setTimeout(resolve, 3));
+        activeNestedReads -= 1;
+        if (path.startsWith(`${fixture.prefix}/assign/`)) {
+          const suffix = path.at(-1)!;
+          const item = `<FunctionSetAssignments href="${fixture.prefix}/fsa/${suffix}"><mRID>fsa-${suffix}</mRID>${link('DERProgramListLink', `${fixture.prefix}/programs/shared`)}</FunctionSetAssignments>`;
+          response.end(xml('FunctionSetAssignmentsList', item, ' all="1" results="1"'));
+          return;
+        }
+        const item = `<DERProgram href="${fixture.prefix}/program/shared"><mRID>shared</mRID><primacy>1</primacy>${link('DERControlListLink', `${fixture.prefix}/controls/shared`)}</DERProgram>`;
+        response.end(xml('DERProgramList', item, ' all="1" results="1"'));
+        return;
+      }
+      response.writeHead(404).end();
+    });
+    fixtures.push(fixture);
+    const store = new MemorySessionStore();
+    const discovery = new AssignmentDiscovery({
+      resources: new ResourceClient({ transport: fixture.transport, store }),
+      store,
+      concurrency: 2,
+    });
+
+    const snapshot = await discovery.reconcile(`${fixture.prefix}/capability`, new Set(lFDIs));
+    expect(snapshot.devices).toHaveLength(lFDIs.length);
+    expect(snapshot.devices.every((device) => device.programs[0]?.mRID === 'shared')).toBe(true);
+    expect(maxActiveNestedReads).toBe(2);
+    expect([...nestedReads.values()].every((count) => count === 1)).toBe(true);
+    expect(nestedReads.size).toBe(4);
   });
 });

@@ -11,8 +11,8 @@ import { PartnerDomain, opaqueToken } from './partner-domain.js';
 import type { ControlRecord, DeviceRecord, ProgramRecord } from './persistence/port.js';
 
 const NS = 'urn:ieee:std:2030.5:ns';
-const DEFAULT_PAGE_SIZE = 50;
-const MAX_PAGE_SIZE = 100;
+const DEFAULT_PAGE_SIZE = 500;
+const MAX_PAGE_SIZE = 500;
 
 export type ConnectionResolver = (request: Request) => string | undefined | Promise<string | undefined>;
 

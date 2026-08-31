@@ -228,6 +228,12 @@ describe('production-shaped partner loop', () => {
     expect(first.text).toContain('results="1"');
     expect(first.text).toContain('rel="next"');
     expect(first.text).toContain('s=1&amp;l=1');
+    const defaultPage = await request(app).get(listHref!);
+    expect(defaultPage.text).toContain('results="2"');
+    expect(defaultPage.text).not.toContain('rel="next"');
+    const tooLarge = await request(app).get(`${listHref}?s=0&l=501`);
+    expect(tooLarge.status).toBe(400);
+    expect(tooLarge.body).toEqual({ error: 'l must be between 1 and 500' });
   });
 });
 

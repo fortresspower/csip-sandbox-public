@@ -17,6 +17,8 @@ The partner provides:
 - a server certificate issued by a CA in the standard public trust store;
 - the client-certificate issuer or issuers it accepts;
 - a server implementation that passes the conformance profile and evidence checklist;
+- list endpoints that honor Fortress requests for up to 500 items per page (required for the
+  100,000-site cadence, not merely optional pagination tuning);
 - an operator contact for certificate rotation, outages, and assignment changes; and
 - application allowlist entries for the active and, during rotation, staged Fortress
   aggregator LFDIs.
@@ -45,6 +47,9 @@ registers it in-band through the discovered EndDeviceList resource.
 5. While operator contact remains paused, both sides validate the graph and evidence. Fortress
    then reconciles and registers the sites currently permitted for telemetry; later permission
    changes add or remove sites without a new partner connection.
+   For a six-figure tier, this includes the real partner's page-500 behavior, p95 write latency,
+   sustainable request rate, throttling, and retries; local fixture timings are not accepted as
+   deployed capacity evidence.
 6. The partner assigns one registered EndDevice to the agreed DERProgram. An assignment makes
    a control discoverable but does not grant Fortress permission to act on that site.
 7. The partner publishes one bounded rehearsal control. Fortress consumes it only for a site

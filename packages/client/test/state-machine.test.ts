@@ -7,7 +7,9 @@ function fakeTransport(controlXml: string): Transport & { posted: { path: string
   return {
     origin: 'https://partner.example',
     posted,
-    async get(path) { return path === '/partner/random-control-feed' ? controlXml : '<x/>'; },
+    async get(path) {
+      return new URL(path, 'https://partner.example').pathname === '/partner/random-control-feed' ? controlXml : '<x/>';
+    },
     async post(path, xml) { posted.push({ path, xml }); return { status: 201, location: '/mup/0/mr/0' }; },
     async put(path, xml) { posted.push({ path, xml }); return { status: 204 }; },
   };

@@ -38,7 +38,7 @@ describe('client-core release bundle', () => {
 
     expect(a).toEqual(b);
     expect(a.sourceCommit).toBe(SOURCE_COMMIT);
-    expect(a.package).toEqual({ name: '@fortress-csip/client-core', version: '0.2.0' });
+    expect(a.package).toEqual({ name: '@fortress-csip/client-core', version: '0.3.0' });
     expect(a.protocolRuntime).toEqual(expect.objectContaining({
       name: '@fortress-csip/protocol',
       version: '0.1.0',
