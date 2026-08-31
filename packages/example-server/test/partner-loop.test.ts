@@ -27,6 +27,20 @@ afterEach(async () => {
 });
 
 describe('production-shaped partner loop', () => {
+  it('serves an IEEE 2030.5 DeviceCapability with an attribute poll rate', async () => {
+    const persistence = new MemoryPartnerPersistence();
+    const { app, domain } = makePartnerApp({ persistence, resolveConnection: () => 'partner-a' });
+    await domain.createConnection('partner-a', AGGREGATOR);
+
+    const capability = await request(app).get('/sep2/capability');
+
+    expect(capability.status).toBe(200);
+    expect(capability.text).toContain(
+      '<DeviceCapability xmlns="urn:ieee:std:2030.5:ns" pollRate="30">',
+    );
+    expect(capability.text).not.toContain('<pollRate>');
+  });
+
   it('discovers variable paths, enrolls devices, follows assignment moves, and records responses and telemetry', async () => {
     let clock = 1_725_000_000;
     const state = createMemoryPersistenceState();

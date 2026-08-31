@@ -23,11 +23,10 @@ export function partnerCsipRouter(domain: PartnerDomain, resolveConnection: Conn
     const connectionId = await requireConnection(domain, resolveConnection, request);
     const token = opaqueToken('connection', connectionId, connectionId);
     sendXml(response, document('DeviceCapability', [
-      '<pollRate>30</pollRate>',
       `<EndDeviceListLink href="/sep2/r/${token}/devices"/>`,
       `<MirrorUsagePointListLink href="/sep2/r/${token}/usage-points"/>`,
       `<TimeLink href="/sep2/time"/>`,
-    ]));
+    ], ' pollRate="30"'));
   }));
 
   router.get('/time', route(async (request, response) => {
