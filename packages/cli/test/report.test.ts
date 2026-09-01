@@ -173,6 +173,30 @@ describe('rendering', () => {
     expect(io.stdout.join('\n')).toContain('Result: READY');
   });
 
+  it('says INCONCLUSIVE rather than READY when most checks could not run', () => {
+    // An anonymous doctor run skips every authenticated check. Reporting that as READY
+    // would read as a clean bill of health for a server barely examined.
+    const report = builder();
+    report.pass('origin.https', 'https');
+    for (const id of ['graph.device-capability', 'graph.namespace', 'graph.time-link']) {
+      report.skip(id, 'requires an authorized client identity');
+    }
+    const io = createMemoryIo();
+    renderReport(report.build(new Date()), io);
+    const out = io.stdout.join('\n');
+    expect(out).toContain('INCONCLUSIVE');
+    expect(out).toContain('3 check(s) did not run');
+  });
+
+  it('still says NOT READY when something failed, whatever was skipped', () => {
+    const report = builder();
+    report.fail('mtls.required', 'anonymous succeeded', 'require mTLS');
+    for (const id of ['graph.namespace', 'graph.time-link']) report.skip(id, 'not reached');
+    const io = createMemoryIo();
+    renderReport(report.build(new Date()), io);
+    expect(io.stdout.join('\n')).toContain('NOT READY');
+  });
+
   it('says INCOMPLETE while an operator action is outstanding', () => {
     const report = builder();
     report.pass('origin.https', 'https');

@@ -36,6 +36,15 @@ export function renderReport(report: Report, io: Io): void {
     io.out('');
   }
   io.out(`Result: ${verdict(report)} (${counts(report)})`);
+
+  // A run where most checks were skipped can read as a clean bill of health, which it is not.
+  // Say plainly that coverage was partial and what each skip is waiting on.
+  if (report.summary.skip > 0 && report.summary.fail === 0) {
+    io.out('');
+    io.out(
+      `${report.summary.skip} check(s) did not run. Each SKIP line above says what it needs.`,
+    );
+  }
 }
 
 /**
@@ -48,6 +57,9 @@ export function renderReport(report: Report, io: Io): void {
 function verdict(report: Report): string {
   if (report.summary.fail > 0) return 'NOT READY';
   if (report.summary.manual > 0) return 'INCOMPLETE';
+  // Skips are not failures, but a run that could not reach most of its checks has not shown
+  // readiness either — most often because no client identity was supplied.
+  if (report.summary.skip > report.summary.pass) return 'INCONCLUSIVE';
   if (report.summary.warn > 0) return 'READY WITH WARNINGS';
   return 'READY';
 }
