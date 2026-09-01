@@ -1,0 +1,18 @@
+{
+  "name": "fortress-csip",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Fortress CSIP partner toolkit — demo, doctor, conformance, and handoff for an IEEE 2030.5 partner server",
+  "bin": {
+    "fortress-csip": "./bin/fortress-csip.mjs"
+  },
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "@fortress-csip/client-core": "0.3.2",
+    "@fortress-csip/example-server": "0.0.0",
+    "@fortress-csip/protocol": "0.1.0"
+  }
+}

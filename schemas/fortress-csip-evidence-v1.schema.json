@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/fortresspower/csip-sandbox-public/schemas/fortress-csip-evidence-v1.schema.json",
+  "title": "Fortress CSIP evidence report v1",
+  "description": "The artifact produced by `fortress-csip doctor` and `fortress-csip conformance`. A partner attaches the conformance form of this document to their Fortress handoff. It is designed to be safe to forward: it carries check identifiers, bounded human-readable messages, and public certificate metadata, and nothing else.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "kind", "profile", "generatedAt", "tool", "target", "summary", "checks"],
+  "properties": {
+    "schema": {
+      "const": "fortress-csip-evidence/v1"
+    },
+    "kind": {
+      "description": "Which command produced this report.",
+      "enum": ["doctor", "conformance", "mtls-rehearsal"]
+    },
+    "profile": {
+      "const": "fortress-csip-polling/v1"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "fortress-csip" },
+        "version": { "type": "string", "maxLength": 40 }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin", "deviceCapabilityPath", "mode"],
+      "properties": {
+        "origin": {
+          "description": "The origin exactly as the partner supplied it.",
+          "type": "string",
+          "maxLength": 500
+        },
+        "deviceCapabilityPath": { "type": "string", "maxLength": 500 },
+        "mode": {
+          "description": "`deployed` enforces public HTTPS on TCP 443 with public trust; `local` is an explicit loopback rehearsal.",
+          "enum": ["deployed", "local"]
+        }
+      }
+    },
+    "identity": {
+      "description": "Metadata about the client certificate used, all of it derivable from the public certificate. Never a PEM body, never a key.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["aggregatorLfdi", "certificateFingerprintSha256", "certificateNotAfter"],
+      "properties": {
+        "aggregatorLfdi": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "certificateFingerprintSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "certificateNotAfter": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "pass", "warn", "fail", "skip", "manual"],
+      "properties": {
+        "status": {
+          "description": "`fail` if anything failed, else `warn` if anything warned, else `pass`. Outstanding manual actions never lift this to a pass on their own.",
+          "enum": ["pass", "warn", "fail"]
+        },
+        "pass": { "type": "integer", "minimum": 0 },
+        "warn": { "type": "integer", "minimum": 0 },
+        "fail": { "type": "integer", "minimum": 0 },
+        "skip": { "type": "integer", "minimum": 0 },
+        "manual": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "category", "status", "summary"],
+        "properties": {
+          "id": {
+            "description": "Stable check identifier, dot-separated. Never renamed once published.",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*(\\.[a-z0-9][a-z0-9-]*)+$",
+            "maxLength": 80
+          },
+          "category": {
+            "description": "Leading segment of the id.",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "maxLength": 40
+          },
+          "status": {
+            "enum": ["pass", "warn", "fail", "skip", "manual"]
+          },
+          "summary": {
+            "description": "One bounded sentence stating what was observed.",
+            "type": "string",
+            "maxLength": 400
+          },
+          "remediation": {
+            "description": "What the partner should change.",
+            "type": "string",
+            "maxLength": 400
+          },
+          "action": {
+            "description": "For a manual check: the operator action being waited on.",
+            "type": "string",
+            "maxLength": 400
+          }
+        }
+      }
+    }
+  }
+}

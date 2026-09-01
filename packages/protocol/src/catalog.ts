@@ -14,8 +14,8 @@ export interface CatalogEntry {
   tier: Tier;
   mapping: Mapping;
   scale?: number | null;                  // powerOfTenMultiplier; null/undefined = N/A
-  category?: string;                      // FMP "Component" grouping label (not a SunSpec model number)
-  levelOfDetail?: 'standard' | 'extended' | 'complete';   // FMP "Level of Detail" — drives the picker's detail toggle
+  category?: string;                      // source-dictionary component grouping label (not a SunSpec model number)
+  levelOfDetail?: 'standard' | 'extended' | 'complete';   // source-dictionary detail band — drives the drawer's progressive-disclosure toggle
   /** Enumerated family (per-cell, etc.): one entry expands to `count` members,
    *  each addressed by `mridTemplate` with `{n}` replaced by the 1-based index. */
   enumerate?: { count: number; mridTemplate: string };

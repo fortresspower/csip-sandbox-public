@@ -46,10 +46,10 @@ it does not burst 100,000 posts at connection startup. At a 300-second standard 
 100,000 sites require an average of about 333 writes/second. Client-core permits at most 32
 simultaneous telemetry source reads or writes (enrollment and assignment remain capped at eight).
 
-The local scale gate injects 20 ms write latency and proves a 60-second slice completes inside the
-manager's 20-second reporting timeout. That is fixture evidence, not a claim about a deployed
-partner. The dev rehearsal must measure the partner's actual p95 latency, sustainable request rate,
-throttling, and retry behavior at the agreed fleet tier before production approval.
+The local scale gate injects 20 ms write latency and proves that a 60-second slice of that load
+completes within its slice. That is fixture evidence, not a claim about a deployed partner. The
+dev rehearsal must measure the partner's actual p95 latency, sustainable request rate, throttling,
+and retry behavior at the agreed fleet tier before production approval.
 
 ## Device identity and assignments
 
@@ -80,7 +80,7 @@ The server supplies:
 
 For an existing mRID, only a status transition to cancellation or supersession is allowed. A
 material change to timing, program, response contract, or command body requires a new mRID.
-Repeated polling and manager restart must not cause a second delivery.
+Repeated polling and a Fortress-side service restart must not cause a second delivery.
 
 ## Lifecycle responses
 

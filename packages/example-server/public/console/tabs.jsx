@@ -426,7 +426,6 @@
   }
 
   // Detail level → which tiers are visible (progressive disclosure for hundreds of points).
-  // Detail level → which Level-of-Detail bands are visible (FMP's progressive disclosure).
   const DETAIL_LEVELS = { standard: ['standard'], extended: ['standard', 'extended'], complete: ['standard', 'extended', 'complete'] };
 
   function PointsDrawer({ selected, onApply, onClose }) {

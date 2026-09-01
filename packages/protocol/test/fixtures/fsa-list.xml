@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <FunctionSetAssignmentsList xmlns="urn:ieee:std:2030.5:ns" all="1" results="1">
   <FunctionSetAssignments href="/assignments/summer-a/primary">
-    <mRID>FSA-HILDA-A</mRID>
+    <mRID>FSA-DEVICE-ALPHA-A</mRID>
     <DERProgramListLink href="/programs/blue-fleet"/>
   </FunctionSetAssignments>
 </FunctionSetAssignmentsList>

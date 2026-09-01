@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { makeServerFromEnvironment } from '../src/index.js';
 import { createMemoryPersistenceState, MemoryPartnerPersistence } from '../src/persistence/memory.js';
-import { makeProductionPartnerApp, makeProductionAppFromEnvironment } from '../src/production.js';
+import { makeProductionPartnerApp } from '../src/production.js';
+import { makeProductionAppFromEnvironment } from '../src/production-dynamodb.js';
 
 describe('production server bootstrap', () => {
   afterEach(() => vi.unstubAllEnvs());

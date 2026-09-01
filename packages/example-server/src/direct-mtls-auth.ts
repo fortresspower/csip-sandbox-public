@@ -13,9 +13,12 @@ interface PeerCertificateSocket {
 /**
  * Resolve a locally terminated mTLS connection from the peer certificate Node verified.
  *
- * Production uses the ALB verify-mode header resolver. This direct resolver exists only for
- * loopback rehearsals where Node itself is the TLS terminator; it preserves the same LFDI allowlist
- * decision without accepting a caller-supplied identity header.
+ * The included ALB adapter resolves a client identity from a verified-leaf header, for
+ * deployments that terminate TLS at a load balancer. This direct resolver is used where Node
+ * itself is the TLS terminator, including the loopback rehearsal; it makes the same LFDI
+ * allowlist decision without accepting a caller-supplied identity header.
+ *
+ * Which resolver a partner uses is a deployment choice. `ConnectionResolver` is the seam.
  */
 export function directMtlsConnectionResolver(persistence: PartnerPersistence): ConnectionResolver {
   return async (request: Request): Promise<string | undefined> => {

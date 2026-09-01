@@ -1,8 +1,12 @@
 # Client-core release bundle
 
-The release bundle is the promotion boundary between this repository and `cmsandbox`.
-It avoids a private npm registry while ensuring the manager consumes one pinned, reviewable
-artifact rather than source files or a sibling checkout.
+> **Maintainer documentation.** Partners integrating with Fortress do not need this page —
+> start at [`../partner/start-here.md`](../partner/start-here.md).
+
+The release bundle is how a downstream consumer takes a pinned, reviewable build of
+`client-core` without a private npm registry and without depending on this repository's
+source layout or a sibling checkout. Everything below happens inside this repository; how a
+particular consumer installs the resulting artifact is that consumer's own concern.
 
 ## Artifact contract
 
@@ -59,13 +63,13 @@ Rebuilding the same source commit must produce byte-identical tarballs and ident
 manifests. The test suite performs that double build and corrupts a copy to prove the
 negative checksum path.
 
-## Promote into `cmsandbox`
+## Consume the verified artifact
 
-Copy all three verified files into `cmsandbox/libs/csip-release/`. Keep the tarball,
-manifest, and checksum in the same commit as the manager dependency change. The manager
-Docker build installs the tarball from its checked-in path and verifies the SHA-256 before
-installation; it does not read this repository, use a registry token, or change the legacy
-`@fortress-csip/protocol` dependency used elsewhere in `cmsandbox`.
+A downstream build installs the tarball from a checked-in path and verifies its SHA-256
+against `SHA256SUMS` before installation. Keep the tarball, manifest, and checksum together
+in the same change as the dependency bump so a reviewer can re-derive the artifact from the
+recorded source commit. The consumer needs no access to this repository at build time and no
+registry token.
 
 When the public client-core contract changes, increment the semantic version before
 building. Any protocol-runtime change also increments the pinned protocol version and is

@@ -8,21 +8,21 @@ import {
 } from '../src/index.js';
 import { controlXml, MemoryTransport } from './control-helpers.js';
 
-const HILDA = '1111111111111111111111111111111111111111';
-const LAB = '2222222222222222222222222222222222222222';
+const DEVICE_ALPHA = '1111111111111111111111111111111111111111';
+const DEVICE_BETA = '2222222222222222222222222222222222222222';
 
 const snapshot: AssignmentSnapshot = {
   valid: true,
   devices: [
     {
-      lFDI: HILDA,
+      lFDI: DEVICE_ALPHA,
       programs: [
         { mRID: 'alpha', primacy: 1, controlListHref: '/feeds/alpha' },
         { mRID: 'beta', primacy: 7, controlListHref: '/feeds/beta' },
       ],
     },
     {
-      lFDI: LAB,
+      lFDI: DEVICE_BETA,
       programs: [{ mRID: 'beta', primacy: 7, controlListHref: '/feeds/beta' }],
     },
   ],
@@ -49,11 +49,11 @@ describe('control polling', () => {
     expect(result.intents).toHaveLength(2);
     expect(result.intents[0]).toMatchObject({
       connectionId: 'partner-a', wireMrid: 'event-alpha', programMrid: 'alpha', programPrimacy: 1,
-      assignedLFDIs: [HILDA], replyTo: '/responses/alpha', responseRequired: '03',
+      assignedLFDIs: [DEVICE_ALPHA], replyTo: '/responses/alpha', responseRequired: '03',
       interval: { start: 200, duration: 300 }, control: { opModFixedW: -1200 },
     });
     expect(result.intents[1]).toMatchObject({
-      wireMrid: 'event-beta', programMrid: 'beta', programPrimacy: 7, assignedLFDIs: [HILDA, LAB],
+      wireMrid: 'event-beta', programMrid: 'beta', programPrimacy: 7, assignedLFDIs: [DEVICE_ALPHA, DEVICE_BETA],
     });
     expect(result.intents[0].internalEventId).not.toBe(result.intents[1].internalEventId);
     expect((await store.listPendingResponses()).map((effect) => effect.response.status)).toEqual([1]);
@@ -84,7 +84,7 @@ describe('control polling', () => {
     const cancelled = await poller.poll(snapshot);
     expect(cancelled.intents).toEqual([]);
     expect(cancelled.lifecycleUpdates).toEqual([
-      expect.objectContaining({ wireMrid: 'event-alpha', kind: 'cancelled', assignedLFDIs: [HILDA] }),
+      expect.objectContaining({ wireMrid: 'event-alpha', kind: 'cancelled', assignedLFDIs: [DEVICE_ALPHA] }),
     ]);
     expect((await store.listPendingResponses()).map((effect) => effect.response.status).sort()).toEqual([1, 6]);
 
@@ -123,12 +123,12 @@ describe('control polling', () => {
       now: () => 250,
     });
     const first = await poller.poll(snapshot);
-    expect(first.intents[0].assignedLFDIs).toEqual([HILDA]);
+    expect(first.intents[0].assignedLFDIs).toEqual([DEVICE_ALPHA]);
 
     const moved: AssignmentSnapshot = {
       valid: true,
       devices: [{
-        lFDI: LAB,
+        lFDI: DEVICE_BETA,
         programs: [{ mRID: 'alpha', primacy: 1, controlListHref: '/feeds/alpha' }],
       }],
     };
@@ -138,7 +138,7 @@ describe('control polling', () => {
       expect.objectContaining({
         wireMrid: 'moving-control',
         kind: 'cancelled',
-        assignedLFDIs: [HILDA],
+        assignedLFDIs: [DEVICE_ALPHA],
       }),
     ]);
     expect((await store.listPendingResponses()).map((effect) => effect.response.status).sort()).toEqual([1, 6]);

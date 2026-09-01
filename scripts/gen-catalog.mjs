@@ -37,7 +37,7 @@ const UOM = { W: 38, kW: 38, V: 29, mV: 29, A: 5, mA: 5, Hz: 33, var: 63, VA: 61
 const uomOf = (u) => UOM[u] ?? UOM[String(u).toLowerCase()] ?? 0;
 const scaleOf = (u) => ({ kW: 3, kWh: 3, mA: -3, mV: -3 }[u] ?? 0); // 10^3 kilo, 10^-3 milli
 
-// The dictionary's `labels` column carries FMP's classification as "Family: Value" pairs
+// The dictionary's `labels` column carries source classification labels as "Family: Value" pairs
 // (separated by | or ;) — e.g. "Level of Detail: Complete; Component: Battery; ...".
 function parseLabels(s) {
   const o = {};
@@ -47,9 +47,9 @@ function parseLabels(s) {
   }
   return o;
 }
-// FMP-style cruft filter: real telemetry carries classification labels; structural registers
+// Cruft filter: real telemetry carries source classification labels; structural registers
 // (scale factors *_SF, model headers ID/L, reserved/serial/site-id) are unlabeled — drop them,
-// exactly the points FMP hides. The pattern also catches the few labeled stragglers (siteID).
+// exactly the points the source dictionary hides. The pattern also catches the few labeled stragglers (siteID).
 const STRUCTURAL = /(^id$|^l$|_sf$|^sf$|^site\s?id$|^reserved\d*$|^sn$|^mn$)/i;
 const LOD = { standard: 'standard', extended: 'extended', complete: 'complete' };
 
@@ -61,13 +61,13 @@ for (const r of rows) {
   const model = Number(r.model);
   if (!model) continue;
   const point = (r.point || '').trim();
-  if (!r.labels || !r.labels.trim() || STRUCTURAL.test(point)) { dropped++; continue; }   // FMP cruft drop
+  if (!r.labels || !r.labels.trim() || STRUCTURAL.test(point)) { dropped++; continue; }   // cruft drop
   const labels = parseLabels(r.labels);
   const fortressPoint = `model${model}.${point}`;
   const mrid = `fortress:${model}-${point}`.toLowerCase();
   const uom = uomOf(r.unit);
   const scale = scaleOf(r.unit);
-  const category = labels['Component'] || r.category || 'Other';                            // FMP Component grouping (not "SunSpec NNNNN")
+  const category = labels['Component'] || r.category || 'Other';                            // source-dictionary component grouping (not "SunSpec NNNNN")
   const levelOfDetail = LOD[(labels['Level of Detail'] || '').toLowerCase()] || 'complete';
   const equipment = labels['Equipment'] || undefined;
   const mapping = { kind: 'extension', uom, conventionMrid: mrid };

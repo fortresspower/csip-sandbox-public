@@ -1,0 +1,77 @@
+{
+  "$comment": "Term data for scripts/check-public-boundary.mjs. This file is the one path the checker excludes from its own scan, so that the terms it forbids can be written down somewhere. Keep it data-only.",
+  "repository": [
+    {
+      "term": "cmsandbox",
+      "flags": "i",
+      "why": "names a private Fortress repository"
+    },
+    {
+      "term": "ra-workflow",
+      "flags": "i",
+      "why": "names a private Fortress service"
+    },
+    {
+      "term": "manager-vppOps",
+      "flags": "i",
+      "why": "names a private Fortress service"
+    },
+    {
+      "term": "ra-command",
+      "flags": "i",
+      "why": "names a private Fortress dispatch path"
+    },
+    {
+      "term": "HILDA",
+      "flags": "i",
+      "why": "names a Fortress-internal emulator; use neutral fixture names such as DEVICE_ALPHA"
+    },
+    {
+      "term": "Clavis",
+      "flags": "i",
+      "why": "names Fortress-private infrastructure"
+    },
+    {
+      "term": "\\bFMP\\b",
+      "regex": true,
+      "why": "internal product vocabulary; say \"source classification labels\", \"detail bands\", or \"component grouping label\""
+    }
+  ],
+  "partnerFacing": [
+    {
+      "term": "Secrets Manager",
+      "flags": "i",
+      "why": "Fortress deployment detail; partners choose their own secret storage"
+    },
+    {
+      "term": "Terraform",
+      "flags": "i",
+      "why": "Fortress deployment detail; partners choose their own provisioning"
+    },
+    {
+      "term": "internal gRPC",
+      "flags": "i",
+      "why": "describes Fortress-private service topology"
+    },
+    {
+      "term": "Fortress event window",
+      "flags": "i",
+      "why": "names a Fortress-internal control concept"
+    },
+    {
+      "term": "manager restart",
+      "flags": "i",
+      "why": "names a Fortress-internal process; say \"Fortress-side service restart\""
+    },
+    {
+      "term": "manager's 20-second",
+      "flags": "i",
+      "why": "discloses an internal Fortress timeout"
+    }
+  ],
+  "partnerFacingPaths": [
+    "README.md",
+    "docs/",
+    "packages/example-server/public/"
+  ]
+}

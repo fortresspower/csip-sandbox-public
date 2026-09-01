@@ -4,13 +4,14 @@ import { Store } from './store.js';
 import { csipRouter } from './routes.js';
 import { adminRouter } from './admin.js';
 import { seedBackfill } from './backfill.js';
-import { makeProductionAppFromEnvironment } from './production.js';
+import { makeProductionAppFromEnvironment } from './production-dynamodb.js';
 
 export { makePartnerApp } from './partner-app.js';
 export { PartnerDomain, opaqueToken } from './partner-domain.js';
 export { MemoryPartnerPersistence, createMemoryPersistenceState } from './persistence/memory.js';
 export { DynamoPartnerPersistence } from './persistence/dynamodb.js';
-export { makeProductionAppFromEnvironment, makeProductionPartnerApp } from './production.js';
+export { makeProductionAppFromEnvironment } from './production-dynamodb.js';
+export { makeProductionPartnerApp } from './production.js';
 export type { ProductionPartnerAppOptions } from './production.js';
 export { aggregatorLfdiFromAlbLeafHeader, verifiedLeafConnectionResolver } from './verified-leaf-auth.js';
 export { directMtlsConnectionResolver } from './direct-mtls-auth.js';

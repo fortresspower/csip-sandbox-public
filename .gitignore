@@ -3,6 +3,10 @@ dist/
 release/
 *.tsbuildinfo
 tls/
+# fortress-csip toolkit output: resumable conformance session state and generated evidence
+.fortress-csip-session.json
+artifacts/
+
 # roborev snapshots
 /.roborev/
 .roborev.toml

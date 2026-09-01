@@ -1,0 +1,145 @@
+{
+  "schema": "fortress-csip-evidence/v1",
+  "kind": "conformance",
+  "profile": "fortress-csip-polling/v1",
+  "generatedAt": "2026-09-01T14:00:00.000Z",
+  "tool": {
+    "name": "fortress-csip",
+    "version": "0.1.0"
+  },
+  "target": {
+    "origin": "bundled-example-server",
+    "deviceCapabilityPath": "/sep2/capability",
+    "mode": "local"
+  },
+  "summary": {
+    "status": "pass",
+    "pass": 20,
+    "warn": 0,
+    "fail": 0,
+    "skip": 0,
+    "manual": 0
+  },
+  "checks": [
+    {
+      "id": "enrollment.first-registration",
+      "category": "enrollment",
+      "status": "pass",
+      "summary": "registered synthetic device test-device-alpha in-band"
+    },
+    {
+      "id": "enrollment.idempotent-registration",
+      "category": "enrollment",
+      "status": "pass",
+      "summary": "registering the same LFDI twice converged on one EndDevice"
+    },
+    {
+      "id": "enrollment.two-distinct-devices",
+      "category": "enrollment",
+      "status": "pass",
+      "summary": "two synthetic devices (test-device-alpha, test-device-beta) hold distinct resources"
+    },
+    {
+      "id": "discovery.opaque-paths",
+      "category": "discovery",
+      "status": "pass",
+      "summary": "all 2 discovered EndDevice path(s) were followed as opaque links"
+    },
+    {
+      "id": "pagination.accepts-l500",
+      "category": "pagination",
+      "status": "pass",
+      "summary": "lists accepted l=500 and stayed within the page cap"
+    },
+    {
+      "id": "pagination.preserves-page-size",
+      "category": "pagination",
+      "status": "pass",
+      "summary": "pagination was internally consistent across pages (all, results, and next links agreed)"
+    },
+    {
+      "id": "assignment.exactly-one-target",
+      "category": "assignment",
+      "status": "pass",
+      "summary": "exactly one test device (test-device-alpha) discovered a DERProgram"
+    },
+    {
+      "id": "assignment.empty-dispatches-none",
+      "category": "assignment",
+      "status": "pass",
+      "summary": "the unassigned test device (test-device-beta) discovered no program, so it can receive nothing"
+    },
+    {
+      "id": "control.fixed-w-bounded",
+      "category": "control",
+      "status": "pass",
+      "summary": "the bounded fixed-W control reached only test-device-alpha"
+    },
+    {
+      "id": "control.mrid-idempotent",
+      "category": "control",
+      "status": "pass",
+      "summary": "repeated polling did not re-deliver the same mRID"
+    },
+    {
+      "id": "responses.accepted",
+      "category": "responses",
+      "status": "pass",
+      "summary": "1 accepted response(s) were posted on delivery and acknowledged"
+    },
+    {
+      "id": "responses.started",
+      "category": "responses",
+      "status": "pass",
+      "summary": "1 started response(s) were accepted at the advertised replyTo"
+    },
+    {
+      "id": "responses.terminal",
+      "category": "responses",
+      "status": "pass",
+      "summary": "the terminal response was accepted at the advertised replyTo, after a client restart"
+    },
+    {
+      "id": "recovery.no-duplicate-delivery",
+      "category": "recovery",
+      "status": "pass",
+      "summary": "a restarted client re-read the graph and did not deliver the control a second time"
+    },
+    {
+      "id": "recovery.owed-response-retried",
+      "category": "recovery",
+      "status": "pass",
+      "summary": "1 response(s) owed at restart survived it and were delivered"
+    },
+    {
+      "id": "isolation.connection-scope",
+      "category": "isolation",
+      "status": "pass",
+      "summary": "a second connection reusing the same program and control identifiers remained invisible to this one"
+    },
+    {
+      "id": "assignment.move-retargets",
+      "category": "assignment",
+      "status": "pass",
+      "summary": "moving the assignment retargeted discovery to test-device-beta with no Fortress-side change"
+    },
+    {
+      "id": "telemetry.standard-mup",
+      "category": "telemetry",
+      "status": "pass",
+      "summary": "3 standard telemetry write(s) were accepted at the discovered destination"
+    },
+    {
+      "id": "telemetry.der-status",
+      "category": "telemetry",
+      "status": "pass",
+      "summary": "DERStatus was written to its advertised destination"
+    },
+    {
+      "id": "telemetry.der-capability",
+      "category": "telemetry",
+      "status": "pass",
+      "summary": "DERCapability was written to its advertised destination"
+    }
+  ]
+}

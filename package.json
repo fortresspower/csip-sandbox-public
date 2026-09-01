@@ -6,8 +6,10 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc -b",
-    "pretest": "npm run build",
+    "build": "tsc -b && npm run build:cli",
+    "build:cli": "npm run build --workspace fortress-csip",
+    "check:public-boundary": "node scripts/check-public-boundary.mjs",
+    "pretest": "npm run check:public-boundary && npm run build",
     "test": "vitest run",
     "test:client-core-scale": "node --expose-gc --import tsx scripts/client-core-scale.ts",
     "demo": "bash scripts/demo-loop.sh",
@@ -15,7 +17,8 @@
     "server:admin": "tsx scripts/server-admin.ts",
     "gen:catalog": "node scripts/gen-catalog.mjs",
     "release:bundle": "node scripts/release-bundle.mjs",
-    "release:verify": "node scripts/release-bundle.mjs --verify"
+    "release:verify": "node scripts/release-bundle.mjs --verify",
+    "postinstall": "npm run build:cli"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

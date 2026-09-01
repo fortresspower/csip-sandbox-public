@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+// Compatibility wrapper for `npm run cert:lfdi`.
+//
+// The single implementation is `fortress-csip lfdi`, which shares client-core's
+// `aggregatorLfdiFromCertificate` rather than deriving the value a second way. This module
+// keeps the previous script path and its exported helper working for existing callers.
+
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { aggregatorLfdiFromCertificate } from '../packages/client-core/src/identity.js';
@@ -9,7 +15,12 @@ export async function certificateLfdi(path: string): Promise<string> {
 
 async function main(): Promise<void> {
   const [path, extra] = process.argv.slice(2);
-  if (!path || extra) throw new Error('usage: npm run cert:lfdi -- path/to/client-certificate.pem');
+  if (!path || extra) {
+    throw new Error(
+      'usage: npm run cert:lfdi -- path/to/client-certificate.pem\n' +
+        '   or: npx fortress-csip lfdi path/to/client-certificate.pem',
+    );
+  }
   console.log(await certificateLfdi(path));
 }
 

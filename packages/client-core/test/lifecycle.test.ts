@@ -12,8 +12,8 @@ import {
 } from '../src/index.js';
 import { controlXml, MemoryTransport } from './control-helpers.js';
 
-const HILDA = '1111111111111111111111111111111111111111';
-const LAB = '2222222222222222222222222222222222222222';
+const DEVICE_ALPHA = '1111111111111111111111111111111111111111';
+const DEVICE_BETA = '2222222222222222222222222222222222222222';
 
 describe('control lifecycle responses', () => {
   it('uses one batch read and write for a fleet response', async () => {
@@ -58,8 +58,8 @@ describe('control lifecycle responses', () => {
     const snapshot: AssignmentSnapshot = {
       valid: true,
       devices: [
-        { lFDI: HILDA, programs: [{ mRID: 'program', primacy: 3, controlListHref: '/random/control-feed' }] },
-        { lFDI: LAB, programs: [{ mRID: 'program', primacy: 3, controlListHref: '/random/control-feed' }] },
+        { lFDI: DEVICE_ALPHA, programs: [{ mRID: 'program', primacy: 3, controlListHref: '/random/control-feed' }] },
+        { lFDI: DEVICE_BETA, programs: [{ mRID: 'program', primacy: 3, controlListHref: '/random/control-feed' }] },
       ],
     };
     const store = new MemorySessionStore();
@@ -80,7 +80,7 @@ describe('control lifecycle responses', () => {
     const posts = transport.requests.filter((request) => request.method === 'POST');
     expect(posts.every((request) => request.href === '/random/response-destination')).toBe(true);
     const responses = posts.map((request) => parseDERControlResponse(request.body!));
-    expect(new Set(responses.map((response) => response.endDeviceLFDI))).toEqual(new Set([HILDA, LAB]));
+    expect(new Set(responses.map((response) => response.endDeviceLFDI))).toEqual(new Set([DEVICE_ALPHA, DEVICE_BETA]));
     expect(responses.every((response) => response.subject === 'event-7' && response.status === 2)).toBe(true);
     expect(await store.listPendingResponses()).toEqual([]);
   });
@@ -92,7 +92,7 @@ describe('control lifecycle responses', () => {
     }));
     const snapshot: AssignmentSnapshot = {
       valid: true,
-      devices: [{ lFDI: HILDA, programs: [{ mRID: 'p', primacy: 1, controlListHref: '/controls' }] }],
+      devices: [{ lFDI: DEVICE_ALPHA, programs: [{ mRID: 'p', primacy: 1, controlListHref: '/controls' }] }],
     };
     const store = new MemorySessionStore();
     const resources = new ResourceClient({ transport, store });
@@ -110,8 +110,8 @@ describe('control lifecycle responses', () => {
     const snapshot: AssignmentSnapshot = {
       valid: true,
       devices: [
-        { lFDI: HILDA, programs: [{ mRID: 'p', primacy: 1, controlListHref: '/controls' }] },
-        { lFDI: LAB, programs: [{ mRID: 'p', primacy: 1, controlListHref: '/controls' }] },
+        { lFDI: DEVICE_ALPHA, programs: [{ mRID: 'p', primacy: 1, controlListHref: '/controls' }] },
+        { lFDI: DEVICE_BETA, programs: [{ mRID: 'p', primacy: 1, controlListHref: '/controls' }] },
       ],
     };
     const store = new MemorySessionStore();
@@ -119,8 +119,8 @@ describe('control lifecycle responses', () => {
     const [intent] = (await new ControlPoller({ connectionId: 'partner-a', resources, store }).poll(snapshot)).intents;
     const lifecycle = new LifecycleResponder({ resources, store });
 
-    expect(await lifecycle.recordOutcome(intent.internalEventId, 'completed', HILDA)).toBe(1);
-    expect((await store.listPendingResponses()).map((effect) => effect.response.endDeviceLFDI)).toEqual([HILDA]);
+    expect(await lifecycle.recordOutcome(intent.internalEventId, 'completed', DEVICE_ALPHA)).toBe(1);
+    expect((await store.listPendingResponses()).map((effect) => effect.response.endDeviceLFDI)).toEqual([DEVICE_ALPHA]);
     await expect(lifecycle.recordOutcome(intent.internalEventId, 'completed', '3'.repeat(40)))
       .rejects.toThrow(/not assigned/);
   });
@@ -132,14 +132,14 @@ describe('control lifecycle responses', () => {
     }));
     const snapshot: AssignmentSnapshot = {
       valid: true,
-      devices: [{ lFDI: HILDA, programs: [{ mRID: 'p', primacy: 1, controlListHref: '/controls' }] }],
+      devices: [{ lFDI: DEVICE_ALPHA, programs: [{ mRID: 'p', primacy: 1, controlListHref: '/controls' }] }],
     };
     const store = new MemorySessionStore();
     const resources = new ResourceClient({ transport, store });
     const [intent] = (await new ControlPoller({ connectionId: 'partner-a', resources, store }).poll(snapshot)).intents;
     const lifecycle = new LifecycleResponder({ resources, store });
 
-    expect(await lifecycle.recordOutcome(intent.internalEventId, 'declined', HILDA)).toBe(1);
+    expect(await lifecycle.recordOutcome(intent.internalEventId, 'declined', DEVICE_ALPHA)).toBe(1);
     expect((await store.listPendingResponses()).map((effect) => effect.response.status)).toEqual([4]);
   });
 });
