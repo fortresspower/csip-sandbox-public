@@ -17,6 +17,9 @@ device serials, and unrelated customer data.
 ## Discovery and in-band enrollment
 
 - [ ] DeviceCapability advertises Time, EndDeviceList, and MirrorUsagePointList.
+- [ ] Every list accepts `l=500`, returns no more than 500 items, and preserves its selected `l` in `next` links.
+- [ ] Dev evidence measures real telemetry p95 latency, sustainable writes/second, throttling, and retries at the requested fleet tier (the local 20 ms fixture is not substituted).
+- [ ] The partner sustains the agreed staggered cadence; at 100,000 sites and 300 seconds this averages about 333 standard writes/second.
 - [ ] Resource paths can be treated as opaque; the test does not depend on numeric fixed paths.
 - [ ] Pagination, relative links, poll rates, and changed resource paths converge.
 - [ ] Posting the same LFDI twice creates one logical EndDevice.

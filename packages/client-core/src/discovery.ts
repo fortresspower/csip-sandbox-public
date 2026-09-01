@@ -1,4 +1,4 @@
-import { CsipDiscoveryError, ResourceClient } from './resource-client.js';
+import { CsipDiscoveryError, ResourceClient, type EndDeviceFleetSnapshot } from './resource-client.js';
 import { isCanonicalLfdi } from './identity.js';
 import type {
   AssignedProgram,
@@ -6,24 +6,45 @@ import type {
   DeviceAssignment,
   SessionStore,
 } from './session-store.js';
+import {
+  DEFAULT_WORK_CONCURRENCY,
+  mapConcurrent,
+  throwIfAborted,
+  validateWorkConcurrency,
+  type CsipWorkOptions,
+} from './concurrency.js';
 
 export interface AssignmentDiscoveryOptions {
   resources: ResourceClient;
   store: SessionStore;
   maxResources?: number;
+  /** Maximum simultaneous nested resource reads. Hard-capped at eight. */
+  concurrency?: number;
 }
+
+export interface AssignmentReconcileOptions extends CsipWorkOptions {
+  snapshot?: EndDeviceFleetSnapshot;
+}
+
+export const DEFAULT_MAX_ASSIGNMENT_RESOURCES = 500_000;
 
 export class AssignmentDiscovery {
   readonly #resources: ResourceClient;
   readonly #store: SessionStore;
   readonly #maxResources: number;
+  readonly #concurrency: number;
 
   constructor(options: AssignmentDiscoveryOptions) {
     this.#resources = options.resources;
     this.#store = options.store;
-    this.#maxResources = options.maxResources ?? 512;
+    this.#maxResources = options.maxResources ?? DEFAULT_MAX_ASSIGNMENT_RESOURCES;
     if (!Number.isSafeInteger(this.#maxResources) || this.#maxResources <= 0) {
       throw new CsipDiscoveryError('maxResources must be a positive safe integer');
+    }
+    try {
+      this.#concurrency = validateWorkConcurrency(options.concurrency ?? DEFAULT_WORK_CONCURRENCY);
+    } catch (error) {
+      throw new CsipDiscoveryError((error as Error).message);
     }
   }
 
@@ -31,9 +52,10 @@ export class AssignmentDiscovery {
     deviceCapabilityHref: string,
     knownLFDIs: ReadonlySet<string>,
     eligibleLFDIs: ReadonlySet<string> = knownLFDIs,
+    options: AssignmentReconcileOptions = {},
   ): Promise<AssignmentSnapshot> {
     try {
-      const snapshot = await this.#discover(deviceCapabilityHref, knownLFDIs, eligibleLFDIs);
+      const snapshot = await this.#discover(deviceCapabilityHref, knownLFDIs, eligibleLFDIs, options);
       await this.#store.saveAssignmentSnapshot(snapshot);
       return snapshot;
     } catch (error) {
@@ -48,7 +70,9 @@ export class AssignmentDiscovery {
     deviceCapabilityHref: string,
     knownLFDIs: ReadonlySet<string>,
     eligibleLFDIs: ReadonlySet<string>,
+    options: AssignmentReconcileOptions,
   ): Promise<AssignmentSnapshot> {
+    throwIfAborted(options.signal);
     for (const lFDI of knownLFDIs) {
       if (!isCanonicalLfdi(lFDI)) throw new CsipDiscoveryError(`eligible LFDI is invalid: ${lFDI}`);
     }
@@ -66,11 +90,10 @@ export class AssignmentDiscovery {
     };
 
     consume(1);
-    const capability = await this.#resources.deviceCapability(deviceCapabilityHref);
-    if (!capability.EndDeviceListLink) {
-      throw new CsipDiscoveryError('DeviceCapability does not provide EndDeviceListLink');
-    }
-    const endDevices = await this.#resources.endDevices(capability.EndDeviceListLink);
+    const fleet = options.snapshot
+      ? this.#resources.requireEndDeviceFleet(deviceCapabilityHref, options.snapshot)
+      : await this.#resources.endDeviceFleet(deviceCapabilityHref);
+    const endDevices = fleet.endDevices;
     consume(endDevices.length);
     const seen = new Set<string>();
     for (const device of endDevices) {
@@ -79,20 +102,46 @@ export class AssignmentDiscovery {
       seen.add(device.lFDI);
     }
 
-    const devices: DeviceAssignment[] = [];
-    for (const device of endDevices) {
+    const assignmentReads = new Map<string, Promise<Awaited<ReturnType<ResourceClient['functionSetAssignments']>>>>();
+    const programReads = new Map<string, Promise<Awaited<ReturnType<ResourceClient['derPrograms']>>>>();
+    const readAssignments = (href: string): Promise<Awaited<ReturnType<ResourceClient['functionSetAssignments']>>> => {
+      const canonical = this.#resources.canonicalHref(href);
+      let pending = assignmentReads.get(canonical);
+      if (!pending) {
+        pending = this.#resources.functionSetAssignments(href).then((assignments) => {
+          consume(assignments.length);
+          return assignments;
+        });
+        assignmentReads.set(canonical, pending);
+      }
+      return pending;
+    };
+    const readPrograms = (href: string): Promise<Awaited<ReturnType<ResourceClient['derPrograms']>>> => {
+      const canonical = this.#resources.canonicalHref(href);
+      let pending = programReads.get(canonical);
+      if (!pending) {
+        pending = this.#resources.derPrograms(href).then((programs) => {
+          consume(programs.length);
+          return programs;
+        });
+        programReads.set(canonical, pending);
+      }
+      return pending;
+    };
+
+    const devices = await mapConcurrent(endDevices, this.#concurrency, async (device): Promise<DeviceAssignment> => {
+      throwIfAborted(options.signal);
       if (device.href) this.#resources.canonicalHref(device.href);
       const programs: AssignedProgram[] = [];
       if (eligibleLFDIs.has(device.lFDI) && device.FunctionSetAssignmentsListLink) {
-        const assignments = await this.#resources.functionSetAssignments(device.FunctionSetAssignmentsListLink);
-        consume(assignments.length);
+        const assignments = await readAssignments(device.FunctionSetAssignmentsListLink);
         for (const assignment of assignments) {
+          throwIfAborted(options.signal);
           if (assignment.href) this.#resources.canonicalHref(assignment.href);
           if (!assignment.DERProgramListLink) {
             throw new CsipDiscoveryError(`FunctionSetAssignments ${assignment.mRID} has no DERProgramListLink`);
           }
-          const assignedPrograms = await this.#resources.derPrograms(assignment.DERProgramListLink);
-          consume(assignedPrograms.length);
+          const assignedPrograms = await readPrograms(assignment.DERProgramListLink);
           for (const program of assignedPrograms) {
             if (program.href) this.#resources.canonicalHref(program.href);
             if (!program.DERControlListLink) {
@@ -110,12 +159,12 @@ export class AssignmentDiscovery {
           }
         }
       }
-      devices.push({
+      return {
         lFDI: device.lFDI,
         ...(device.href ? { href: device.href } : {}),
         programs,
-      });
-    }
+      };
+    }, options.signal);
     return { valid: true, devices };
   }
 }

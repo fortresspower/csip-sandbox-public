@@ -9,6 +9,7 @@
     "build": "tsc -b",
     "pretest": "npm run build",
     "test": "vitest run",
+    "test:client-core-scale": "node --expose-gc --import tsx scripts/client-core-scale.ts",
     "demo": "bash scripts/demo-loop.sh",
     "cert:lfdi": "tsx scripts/certificate-lfdi.ts",
     "server:admin": "tsx scripts/server-admin.ts",

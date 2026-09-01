@@ -20,7 +20,7 @@ export function makePartnerApp(options: PartnerAppOptions) {
   app.use((error: HttpError | Error, _request: Request, response: Response, _next: NextFunction) => {
     const status = 'status' in error && typeof error.status === 'number' ? error.status : 500;
     if (status >= 500) {
-      const category = error.name.includes('Throttl') ? 'dynamodb_throttled' : 'internal';
+      const category = error.name.includes('Throttl') ? 'persistence_throttled' : 'internal';
       console.error(JSON.stringify({ event: 'csip_request_failed', category }));
     }
     response.status(status).json({ error: status >= 500 ? 'internal server error' : error.message });

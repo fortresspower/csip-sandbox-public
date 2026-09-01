@@ -47,26 +47,33 @@ export async function queueControlResponse(
   if (!intent.replyTo) {
     throw new CsipDiscoveryError(`control ${intent.wireMrid} requests a response without replyTo`);
   }
-  let queued = 0;
+  const replyTo = intent.replyTo;
   const recipients = endDeviceLfdi === undefined
     ? intent.assignedLFDIs
     : intent.assignedLFDIs.filter((lFDI) => lFDI === endDeviceLfdi);
   if (endDeviceLfdi !== undefined && recipients.length === 0) {
     throw new CsipDiscoveryError(`control ${intent.wireMrid} is not assigned to EndDevice ${endDeviceLfdi}`);
   }
-  for (const lFDI of recipients) {
-    const id = `${intent.internalEventId}\0${lFDI}\0${status}`;
-    if (await store.loadResponseEffect(id)) continue;
-    await store.saveResponseEffect({
-      id,
+  const ids = recipients.map((lFDI) => `${intent.internalEventId}\0${lFDI}\0${status}`);
+  const existing = store.loadResponseEffects
+    ? await store.loadResponseEffects(ids)
+    : await Promise.all(ids.map((id) => store.loadResponseEffect(id)));
+  const effects = recipients.flatMap((lFDI, index) => {
+    if (existing[index]) return [];
+    return [{
+      id: ids[index],
       internalEventId: intent.internalEventId,
-      href: intent.replyTo,
+      href: replyTo,
       response: { createdDateTime, endDeviceLFDI: lFDI, status, subject: intent.wireMrid },
       sent: false,
-    });
-    queued += 1;
+    }];
+  });
+  if (store.saveResponseEffects) {
+    await store.saveResponseEffects(effects);
+  } else {
+    for (const effect of effects) await store.saveResponseEffect(effect);
   }
-  return queued;
+  return effects.length;
 }
 
 export interface LifecycleResponderOptions {

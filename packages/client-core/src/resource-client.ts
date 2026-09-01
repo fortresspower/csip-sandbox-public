@@ -35,6 +35,15 @@ export interface DiscoveredList<T> {
   pollRate?: number;
 }
 
+export interface EndDeviceFleetSnapshot {
+  readonly capabilityHref: string;
+  readonly endDeviceListHref: string;
+  readonly capability: Readonly<CsipDeviceCapability>;
+  readonly endDevices: readonly Readonly<CsipEndDevice>[];
+}
+
+const fleetSnapshotOwners = new WeakMap<EndDeviceFleetSnapshot, ResourceClient>();
+
 export class CsipDiscoveryError extends CsipProtocolError {
   constructor(message: string) {
     super(message);
@@ -46,19 +55,43 @@ export interface ResourceClientOptions {
   transport: CsipTransport;
   store: SessionStore;
   maxPages?: number;
+  maxItems?: number;
+  maxPageItems?: number;
+  /** Requested IEEE 2030.5 `l` value for an initial list link that omits one. */
+  requestedPageItems?: number;
 }
+
+export const DEFAULT_MAX_LIST_PAGES = 2_048;
+/** Supports 100,000 sites with both standard and extension MirrorUsagePoints. */
+export const DEFAULT_MAX_LIST_ITEMS = 200_000;
+export const DEFAULT_MAX_PAGE_ITEMS = 500;
 
 export class ResourceClient {
   readonly #transport: CsipTransport;
   readonly #store: SessionStore;
   readonly #maxPages: number;
+  readonly #maxItems: number;
+  readonly #maxPageItems: number;
+  readonly #requestedPageItems: number;
 
   constructor(options: ResourceClientOptions) {
     this.#transport = options.transport;
     this.#store = options.store;
-    this.#maxPages = options.maxPages ?? 32;
+    this.#maxPages = options.maxPages ?? DEFAULT_MAX_LIST_PAGES;
+    this.#maxItems = options.maxItems ?? DEFAULT_MAX_LIST_ITEMS;
+    this.#maxPageItems = options.maxPageItems ?? DEFAULT_MAX_PAGE_ITEMS;
+    this.#requestedPageItems = options.requestedPageItems ?? DEFAULT_MAX_PAGE_ITEMS;
     if (!Number.isSafeInteger(this.#maxPages) || this.#maxPages <= 0) {
       throw new CsipDiscoveryError('maxPages must be a positive safe integer');
+    }
+    if (!Number.isSafeInteger(this.#maxItems) || this.#maxItems <= 0) {
+      throw new CsipDiscoveryError('maxItems must be a positive safe integer');
+    }
+    if (!Number.isSafeInteger(this.#maxPageItems) || this.#maxPageItems <= 0) {
+      throw new CsipDiscoveryError('maxPageItems must be a positive safe integer');
+    }
+    if (!Number.isSafeInteger(this.#requestedPageItems) || this.#requestedPageItems <= 0 || this.#requestedPageItems > this.#maxPageItems) {
+      throw new CsipDiscoveryError('requestedPageItems must be a positive safe integer no greater than maxPageItems');
     }
   }
 
@@ -84,6 +117,44 @@ export class ResourceClient {
 
   async deviceCapability(href: string): Promise<CsipDeviceCapability> {
     return this.#read(href, parseDeviceCapability);
+  }
+
+  /** Reads one immutable fleet inventory for explicit reuse inside a single caller-owned round. */
+  async endDeviceFleet(href: string): Promise<EndDeviceFleetSnapshot> {
+    const capabilityHref = this.canonicalHref(href);
+    const capability = await this.deviceCapability(capabilityHref);
+    if (!capability.EndDeviceListLink) {
+      throw new CsipDiscoveryError('DeviceCapability does not provide EndDeviceListLink');
+    }
+    const endDeviceListHref = this.canonicalHref(capability.EndDeviceListLink);
+    const endDevices = await this.endDevices(endDeviceListHref);
+    for (const device of endDevices) Object.freeze(device);
+    Object.freeze(endDevices);
+    Object.freeze(capability);
+    const snapshot: EndDeviceFleetSnapshot = Object.freeze({
+      capabilityHref,
+      endDeviceListHref,
+      capability,
+      endDevices,
+    });
+    fleetSnapshotOwners.set(snapshot, this);
+    return snapshot;
+  }
+
+  /** Validates that a supplied snapshot belongs to this exact client and capability. */
+  requireEndDeviceFleet(href: string, snapshot: EndDeviceFleetSnapshot): EndDeviceFleetSnapshot {
+    if (fleetSnapshotOwners.get(snapshot) !== this) {
+      throw new CsipDiscoveryError('EndDevice fleet snapshot belongs to a different ResourceClient');
+    }
+    const capabilityHref = this.canonicalHref(href);
+    if (snapshot.capabilityHref !== capabilityHref) {
+      throw new CsipDiscoveryError('EndDevice fleet snapshot belongs to a different DeviceCapability');
+    }
+    const advertisedList = snapshot.capability.EndDeviceListLink;
+    if (!advertisedList || this.canonicalHref(advertisedList) !== snapshot.endDeviceListHref) {
+      throw new CsipDiscoveryError('EndDevice fleet snapshot list binding is invalid');
+    }
+    return snapshot;
   }
 
   async endDevices(href: string): Promise<CsipEndDevice[]> {
@@ -161,13 +232,16 @@ export class ResourceClient {
     const items: T[] = [];
     let expectedTotal: number | undefined;
     let pollRate: number | undefined;
-    let href: string | undefined = initialHref;
+    let href: string | undefined = this.#initialListHref(initialHref);
     while (href !== undefined) {
       const canonical = this.canonicalHref(href);
       if (visited.has(canonical)) throw new CsipDiscoveryError(`${label} pagination contains a link cycle at ${canonical}`);
       if (visited.size >= this.#maxPages) throw new CsipDiscoveryError(`${label} exceeded the ${this.#maxPages}-page limit`);
       visited.add(canonical);
       const page: Sep2List<T> = await this.#read(href, parser);
+      if (page.items.length > this.#maxPageItems) {
+        throw new CsipDiscoveryError(`${label} page exceeded the ${this.#maxPageItems}-item limit`);
+      }
       if (page.pollRate !== undefined) {
         if (!Number.isSafeInteger(page.pollRate) || page.pollRate <= 0) {
           throw new CsipDiscoveryError(`${label} pollRate must be a positive safe integer`);
@@ -178,6 +252,9 @@ export class ResourceClient {
         pollRate = page.pollRate;
       }
       expectedTotal ??= page.all;
+      if (page.all > this.#maxItems) {
+        throw new CsipDiscoveryError(`${label} exceeded the ${this.#maxItems}-item limit`);
+      }
       if (page.all !== expectedTotal) {
         throw new CsipDiscoveryError(`${label} all metadata changed between pages`);
       }
@@ -185,6 +262,9 @@ export class ResourceClient {
         throw new CsipDiscoveryError(`${label} results metadata does not match its item count`);
       }
       items.push(...page.items);
+      if (items.length > this.#maxItems) {
+        throw new CsipDiscoveryError(`${label} exceeded the ${this.#maxItems}-item limit`);
+      }
       if (items.length > page.all) {
         throw new CsipDiscoveryError(`${label} returned more items than its all metadata`);
       }
@@ -194,5 +274,13 @@ export class ResourceClient {
       throw new CsipDiscoveryError(`${label} ended after ${items.length} of ${expectedTotal} advertised items`);
     }
     return { items, ...(pollRate !== undefined ? { pollRate } : {}) };
+  }
+
+  #initialListHref(href: string): string {
+    const target = new URL(this.canonicalHref(href));
+    if (!target.searchParams.has('l')) target.searchParams.set('l', String(this.#requestedPageItems));
+    return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(href)
+      ? target.href
+      : `${target.pathname}${target.search}${target.hash}`;
   }
 }

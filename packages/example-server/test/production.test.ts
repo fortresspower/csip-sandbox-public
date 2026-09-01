@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import request from 'supertest';
 import { makeServerFromEnvironment } from '../src/index.js';
-import { makeProductionAppFromEnvironment } from '../src/production.js';
+import { createMemoryPersistenceState, MemoryPartnerPersistence } from '../src/persistence/memory.js';
+import { makeProductionPartnerApp, makeProductionAppFromEnvironment } from '../src/production.js';
 
 describe('production server bootstrap', () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -10,6 +12,20 @@ describe('production server bootstrap', () => {
     vi.stubEnv('CSIP_HISTORY_RETENTION_DAYS', '7');
 
     expect(() => makeProductionAppFromEnvironment()).not.toThrow();
+  });
+
+  it('composes the production partner app with partner-chosen persistence', async () => {
+    const state = createMemoryPersistenceState();
+    const first = makeProductionPartnerApp({
+      persistence: new MemoryPartnerPersistence({ state }),
+    });
+    await first.domain.createConnection('partner-a', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+
+    const restarted = makeProductionPartnerApp({
+      persistence: new MemoryPartnerPersistence({ state }),
+    });
+    expect(await restarted.domain.connection('partner-a')).toMatchObject({ connectionId: 'partner-a' });
+    await request(restarted.app).get('/healthz').expect(200, { status: 'ok' });
   });
 
   it.each(['0', '-1', '1.5', 'not-a-number'])(

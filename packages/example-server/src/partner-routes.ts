@@ -11,8 +11,8 @@ import { PartnerDomain, opaqueToken } from './partner-domain.js';
 import type { ControlRecord, DeviceRecord, ProgramRecord } from './persistence/port.js';
 
 const NS = 'urn:ieee:std:2030.5:ns';
-const DEFAULT_PAGE_SIZE = 50;
-const MAX_PAGE_SIZE = 100;
+const DEFAULT_PAGE_SIZE = 500;
+const MAX_PAGE_SIZE = 500;
 
 export type ConnectionResolver = (request: Request) => string | undefined | Promise<string | undefined>;
 
@@ -23,11 +23,10 @@ export function partnerCsipRouter(domain: PartnerDomain, resolveConnection: Conn
     const connectionId = await requireConnection(domain, resolveConnection, request);
     const token = opaqueToken('connection', connectionId, connectionId);
     sendXml(response, document('DeviceCapability', [
-      '<pollRate>30</pollRate>',
       `<EndDeviceListLink href="/sep2/r/${token}/devices"/>`,
       `<MirrorUsagePointListLink href="/sep2/r/${token}/usage-points"/>`,
       `<TimeLink href="/sep2/time"/>`,
-    ]));
+    ], ' pollRate="30"'));
   }));
 
   router.get('/time', route(async (request, response) => {

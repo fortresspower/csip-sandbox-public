@@ -1,0 +1,53 @@
+{
+  "schema": "fortress-csip-client-core-scale/v1",
+  "scenario": {
+    "sites": 100000,
+    "mirrorUsagePoints": 200000,
+    "pageItems": 500,
+    "assignmentShape": "one shared FSA and DERProgram resolved for every site",
+    "telemetryShape": "asynchronous standard/extension route bootstrap, then one staggered 60-second steady window",
+    "telemetrySteadyWindowSeconds": 60,
+    "injectedTelemetryLatencyMs": 20
+  },
+  "budgets": {
+    "controlRoundMs": 30000,
+    "telemetryBootstrapMs": 60000,
+    "telemetrySteadyMs": 20000,
+    "heapDeltaMiB": 256,
+    "maxPageItems": 500,
+    "maxPages": 2048,
+    "maxListItems": 200000,
+    "maxControlConcurrency": 8,
+    "maxTelemetryConcurrency": 32,
+    "derivedMinimumTelemetryConcurrency": 20,
+    "abortMs": 250
+  },
+  "actuals": {
+    "totalWallMs": 37840.8,
+    "controlRoundMs": 7920.8,
+    "sampledPeakHeapDeltaMiB": 164.7,
+    "phaseMs": {
+      "fleetSnapshot": 4813,
+      "enrollment": 800.1,
+      "assignment": 2276.7,
+      "controlResponseQueue": 31,
+      "telemetryDiscovery": 13208.7,
+      "telemetryPublish": 16414.9
+    },
+    "getRequests": 603,
+    "postRequests": 19905,
+    "maxPageItems": 500,
+    "maxActiveEffects": 32,
+    "steadyPublishes": 19905,
+    "steadyPublishesPerSecond": 1212.6,
+    "telemetryBatchReads": 200,
+    "maxTelemetrySourceBatch": 165,
+    "endDeviceBatchWrites": 1,
+    "responseBatchReads": 1,
+    "responseBatchWrites": 1,
+    "abortMs": 30.9,
+    "abortRegistrationsStarted": 8,
+    "abortMaxActive": 8
+  },
+  "command": "npm run test:client-core-scale -- --report docs/partner/client-core-scale-report.json"
+}

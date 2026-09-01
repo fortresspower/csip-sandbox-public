@@ -2,7 +2,26 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { makePartnerApp } from './partner-app.js';
 import { DynamoPartnerPersistence } from './persistence/dynamodb.js';
+import type { PartnerPersistence, RetentionPolicy } from './persistence/port.js';
+import type { ConnectionResolver } from './partner-routes.js';
 import { verifiedLeafConnectionResolver } from './verified-leaf-auth.js';
+
+export interface ProductionPartnerAppOptions {
+  persistence: PartnerPersistence;
+  resolveConnection?: ConnectionResolver;
+  now?: () => number;
+  retention?: RetentionPolicy;
+}
+
+/**
+ * Production protocol/domain composition independent of the selected storage adapter.
+ * Deployment-specific composition roots may supply DynamoDB, SQL, or partner-owned storage.
+ */
+export function makeProductionPartnerApp(options: ProductionPartnerAppOptions) {
+  const resolveConnection = options.resolveConnection
+    ?? verifiedLeafConnectionResolver(options.persistence);
+  return makePartnerApp({ ...options, resolveConnection });
+}
 
 export function makeProductionAppFromEnvironment() {
   const tableName = requiredEnvironment('CSIP_DYNAMODB_TABLE');
@@ -11,9 +30,8 @@ export function makeProductionAppFromEnvironment() {
     marshallOptions: { removeUndefinedValues: true },
   });
   const persistence = new DynamoPartnerPersistence({ client, tableName });
-  return makePartnerApp({
+  return makeProductionPartnerApp({
     persistence,
-    resolveConnection: verifiedLeafConnectionResolver(persistence),
     retention: { historySeconds: historyRetentionDays * 24 * 60 * 60 },
   });
 }

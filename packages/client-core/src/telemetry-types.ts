@@ -36,6 +36,8 @@ export interface TelemetrySample {
 
 export interface TelemetrySource {
   read(lFDI: string): Promise<TelemetrySample>;
+  /** Optional batch path. Per-device failures are returned as Error values. */
+  readMany?(lFDIs: readonly string[]): Promise<ReadonlyMap<string, TelemetrySample | Error>>;
 }
 
 export interface TelemetryProfile {
@@ -56,6 +58,8 @@ export interface TelemetryPublishResult {
   sent: number;
   retryableFailures: number;
   quarantined: number;
+  /** Jobs deferred without loss because the bounded retry queue had no capacity. */
+  backpressured: number;
 }
 
 export interface TelemetryQuarantineEntry {

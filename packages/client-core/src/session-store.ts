@@ -58,6 +58,8 @@ export interface StoredLifecycleEffect {
 export interface SessionStore {
   loadEndDevice(lFDI: string): Promise<StoredEndDevice | undefined>;
   saveEndDevice(device: StoredEndDevice): Promise<void>;
+  /** Persists one reconciliation batch atomically from the caller's perspective. */
+  saveEndDevices(devices: readonly StoredEndDevice[]): Promise<void>;
   removeEndDevice(lFDI: string): Promise<void>;
   loadResource(href: string): Promise<CachedResource | undefined>;
   saveResource(href: string, resource: CachedResource): Promise<void>;
@@ -69,7 +71,11 @@ export interface SessionStore {
   listControls(): Promise<StoredControl[]>;
   listPendingControls(): Promise<StoredControl[]>;
   loadResponseEffect(id: string): Promise<StoredResponseEffect | undefined>;
+  /** Loads one response-effect batch without requiring one durable read per EndDevice. */
+  loadResponseEffects?(ids: readonly string[]): Promise<Array<StoredResponseEffect | undefined>>;
   saveResponseEffect(effect: StoredResponseEffect): Promise<void>;
+  /** Persists one response-effect batch atomically from the caller's perspective. */
+  saveResponseEffects?(effects: readonly StoredResponseEffect[]): Promise<void>;
   listPendingResponses(): Promise<StoredResponseEffect[]>;
   loadLifecycleEffect(id: string): Promise<StoredLifecycleEffect | undefined>;
   saveLifecycleEffect(effect: StoredLifecycleEffect): Promise<void>;
@@ -95,6 +101,10 @@ export class MemorySessionStore implements SessionStore {
 
   async saveEndDevice(device: StoredEndDevice): Promise<void> {
     this.#devices.set(device.lFDI, copy(device));
+  }
+
+  async saveEndDevices(devices: readonly StoredEndDevice[]): Promise<void> {
+    for (const device of devices) this.#devices.set(device.lFDI, copy(device));
   }
 
   async removeEndDevice(lFDI: string): Promise<void> {
@@ -146,8 +156,19 @@ export class MemorySessionStore implements SessionStore {
     return effect ? copy(effect) : undefined;
   }
 
+  async loadResponseEffects(ids: readonly string[]): Promise<Array<StoredResponseEffect | undefined>> {
+    return ids.map((id) => {
+      const effect = this.#responses.get(id);
+      return effect ? copy(effect) : undefined;
+    });
+  }
+
   async saveResponseEffect(effect: StoredResponseEffect): Promise<void> {
     this.#responses.set(effect.id, copy(effect));
+  }
+
+  async saveResponseEffects(effects: readonly StoredResponseEffect[]): Promise<void> {
+    for (const effect of effects) this.#responses.set(effect.id, copy(effect));
   }
 
   async listPendingResponses(): Promise<StoredResponseEffect[]> {

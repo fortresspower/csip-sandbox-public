@@ -1,6 +1,7 @@
 export * from './identity.js';
 export * from './transport.js';
 export * from './types.js';
+export * from './concurrency.js';
 export * from './wire-types.js';
 export * from './session-store.js';
 export * from './resource-client.js';

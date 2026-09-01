@@ -22,7 +22,8 @@ client-core-owned `Csip*` types.
 
 The generated package has no runtime registry dependencies. Its smoke test installs with an
 empty npm cache and `--offline`, imports the ESM API, derives a device LFDI, rejects leaked
-protocol exports, and typechecks an empty TypeScript consumer.
+protocol exports, and typechecks an empty TypeScript consumer, including deployed TLS material
+with a client certificate chain and private key but no custom server CA.
 
 ## Build and prove the release
 

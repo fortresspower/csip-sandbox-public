@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Server } from 'node:http';
 import request from 'supertest';
 import {
@@ -27,6 +27,20 @@ afterEach(async () => {
 });
 
 describe('production-shaped partner loop', () => {
+  it('serves an IEEE 2030.5 DeviceCapability with an attribute poll rate', async () => {
+    const persistence = new MemoryPartnerPersistence();
+    const { app, domain } = makePartnerApp({ persistence, resolveConnection: () => 'partner-a' });
+    await domain.createConnection('partner-a', AGGREGATOR);
+
+    const capability = await request(app).get('/sep2/capability');
+
+    expect(capability.status).toBe(200);
+    expect(capability.text).toContain(
+      '<DeviceCapability xmlns="urn:ieee:std:2030.5:ns" pollRate="30">',
+    );
+    expect(capability.text).not.toContain('<pollRate>');
+  });
+
   it('discovers variable paths, enrolls devices, follows assignment moves, and records responses and telemetry', async () => {
     let clock = 1_725_000_000;
     const state = createMemoryPersistenceState();
@@ -192,7 +206,9 @@ describe('production-shaped partner loop', () => {
   });
 
   it('redacts unexpected persistence failures as server errors', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const failure = new Error('DynamoDB table secret-name throttled');
+    failure.name = 'ThrottlingException';
     const broken = {
       async get() { throw failure; },
       async list() { throw failure; },
@@ -208,6 +224,8 @@ describe('production-shaped partner loop', () => {
     expect(response.status).toBe(500);
     expect(response.body).toEqual({ error: 'internal server error' });
     expect(response.text).not.toContain('secret-name');
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining('"category":"persistence_throttled"'));
+    logged.mockRestore();
   });
 
   it('supports bounded list pagination without numeric resource identities', async () => {
@@ -224,6 +242,12 @@ describe('production-shaped partner loop', () => {
     expect(first.text).toContain('results="1"');
     expect(first.text).toContain('rel="next"');
     expect(first.text).toContain('s=1&amp;l=1');
+    const defaultPage = await request(app).get(listHref!);
+    expect(defaultPage.text).toContain('results="2"');
+    expect(defaultPage.text).not.toContain('rel="next"');
+    const tooLarge = await request(app).get(`${listHref}?s=0&l=501`);
+    expect(tooLarge.status).toBe(400);
+    expect(tooLarge.body).toEqual({ error: 'l must be between 1 and 500' });
   });
 });
 

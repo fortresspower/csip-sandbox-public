@@ -176,8 +176,12 @@ async function npmPack(stage, destination) {
     cwd: ROOT,
     maxBuffer: 10 * 1024 * 1024,
   });
-  const result = JSON.parse(stdout);
-  if (!Array.isArray(result) || result.length !== 1 || !result[0].filename) {
+  const result = stdout.trim() === '' ? [] : JSON.parse(stdout);
+  if (result.length === 0) {
+    const tarballs = (await readdir(destination)).filter((entry) => entry.endsWith('.tgz'));
+    if (tarballs.length === 1) return { path: join(destination, tarballs[0]), details: { filename: tarballs[0] } };
+  }
+  if (!Array.isArray(result) || result.length !== 1 || !result[0]?.filename) {
     throw new Error('npm pack did not return exactly one tarball');
   }
   return { path: join(destination, result[0].filename), details: result[0] };
@@ -352,10 +356,11 @@ export async function smokeInstallRelease(outputDir = DEFAULT_OUTPUT) {
     ].join('\n');
     await execFile(process.execPath, ['--eval', requireSmoke], { cwd: temporary });
     await writeFile(join(temporary, 'consumer.ts'), [
-      `import { deviceLfdi, type CsipDerControlBase } from '${modulePath}';`,
+      `import { deviceLfdi, type CsipDerControlBase, type CsipTlsMaterial } from '${modulePath}';`,
       `const control: CsipDerControlBase = { opModFixedW: -500 };`,
+      `const tls: CsipTlsMaterial = { certificate: new Uint8Array([1]), privateKey: new Uint8Array([1]) };`,
       `const value: string = deviceLfdi('partner', 'site');`,
-      `void control; void value;`,
+      `void control; void tls; void value;`,
       '',
     ].join('\n'));
     await writeFile(join(temporary, 'tsconfig.json'), stableJson({
