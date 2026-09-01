@@ -1,4 +1,5 @@
 import type { Command } from '../command.js';
+import { conformanceCommand } from './conformance.js';
 import { demoCommand } from './demo.js';
 import { doctorCommand } from './doctor.js';
 import { helpCommand } from './help-command.js';
@@ -15,6 +16,7 @@ export function createCommands(): Command[] {
   commands.push(helpCommand(() => commands));
   commands.push(demoCommand());
   commands.push(doctorCommand());
+  commands.push(conformanceCommand());
   commands.push(lfdiCommand());
   return commands;
 }

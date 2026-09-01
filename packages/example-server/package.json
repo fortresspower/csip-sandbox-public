@@ -5,7 +5,8 @@
   "exports": {
     "./production": "./src/production.ts",
     "./persistence/memory": "./src/persistence/memory.ts",
-    "./direct-mtls-auth": "./src/direct-mtls-auth.ts"
+    "./direct-mtls-auth": "./src/direct-mtls-auth.ts",
+    "./partner-app": "./src/partner-app.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1108.0",
