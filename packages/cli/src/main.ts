@@ -12,6 +12,15 @@ import { EXIT_OPERATIONAL, describeError } from './errors.js';
 import { createNodeContext } from './index.js';
 import { createNodeIo } from './io.js';
 
+// `fortress-csip help | head` closes stdout early. Without this, Node raises an unhandled
+// EPIPE and the command dies with a stack trace instead of the exit a pipeline expects.
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'EPIPE') process.exit(0);
+    throw error;
+  });
+}
+
 const io = createNodeIo();
 try {
   const context = await createNodeContext({ io });

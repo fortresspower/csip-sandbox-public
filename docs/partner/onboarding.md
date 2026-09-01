@@ -1,5 +1,9 @@
 # Partner onboarding
 
+> New here? Start with [start-here.md](./start-here.md) for the five-command journey, or run
+> `npx fortress-csip onboarding` for this page's contract in the terminal. This page is the
+> full narrative behind it.
+
 This is the handoff for a partner that has built an IEEE 2030.5 server against the Fortress
 CSIP sandbox and wants Fortress to begin polling it. The normal connection is public HTTPS
 with mutual TLS. Fortress initiates every request; polling-only onboarding does not require

@@ -22,6 +22,51 @@ server **cannot drift** from each other or from the wire contract.
 ## Quick start
 
 ```bash
+npm install
+npx fortress-csip help
+```
+
+`fortress-csip` is the front door. It is local to this checkout — `npm install` builds it, and
+running it fetches nothing from a registry.
+
+```text
+Fortress CSIP Partner Toolkit
+
+Fortress acts as the IEEE 2030.5 client.
+Your system hosts the IEEE 2030.5 server.
+
+Typical journey:
+  demo → build your server → doctor → conformance → connect to Fortress
+
+Commands:
+  help                            Show this help
+  demo [options]                  Run the local closed-loop sandbox
+  doctor <origin> [options]       Run read-only readiness checks against your server
+  conformance <origin> [options]  Exercise the Fortress polling profile and produce evidence
+  lfdi <certificate.pem>          Compute an aggregator LFDI from a certificate
+  onboarding [options]            Show the real-connection handoff contract
+
+Run `fortress-csip <command> --help` for command-specific help.
+```
+
+Start at **[docs/partner/start-here.md](docs/partner/start-here.md)** for the whole journey.
+
+### The journey in five commands
+
+```bash
+npx fortress-csip demo                # see the closed loop run locally
+npx fortress-csip demo --mtls         # see the exact authorization decision Fortress makes
+npx fortress-csip doctor <origin>     # read-only readiness checks against your server
+npx fortress-csip conformance <origin> --cert c.pem --key k.pem --out evidence.json
+npx fortress-csip onboarding          # what each side provides for a real connection
+```
+
+### Running the stack directly
+
+The toolkit wraps the Docker topology rather than replacing it, so this still works and is
+still the thing `demo` runs:
+
+```bash
 docker compose up --build
 ```
 
@@ -84,15 +129,17 @@ curl -s localhost:7001/test/meter-readings
 The scripted version of this check (used in CI):
 
 ```bash
-npm run demo          # bash scripts/demo-loop.sh — asserts dispatch moved telemetry
+npx fortress-csip demo --verify   # asserts dispatch moved telemetry, then tears down
+npm run demo                      # compatibility wrapper for the same thing
 ```
 
 ### Working on the code
 
 ```bash
 npm install
-npm test              # vitest — unit + integration (client <-> server over loopback)
-npm run build         # tsc -b across all packages
+npm test                      # vitest — unit + integration (client <-> server over loopback)
+npm run build                 # tsc -b across all packages, then the CLI bundle
+npm run check:public-boundary # fails on Fortress-private language in the public tree
 ```
 
 > Local scripts run TypeScript through `tsx`. The example-server image is a multi-stage build
@@ -100,9 +147,23 @@ npm run build         # tsc -b across all packages
 
 ### From sandbox to Fortress polling
 
-Start with the [partner onboarding guide](docs/partner/onboarding.md), then use the
-[conformance profile](docs/partner/conformance-profile.md) and
-[evidence checklist](docs/partner/evidence-checklist.md) before asking Fortress to connect.
+Start with **[start here](docs/partner/start-here.md)**, which walks the whole journey. Behind
+it: the [onboarding guide](docs/partner/onboarding.md), the
+[conformance profile](docs/partner/conformance-profile.md) your server must meet,
+[self-test and conformance](docs/partner/self-test.md) for what the harness checks, the
+[evidence checklist](docs/partner/evidence-checklist.md),
+[connecting to Fortress](docs/partner/handoff.md), and
+[operations](docs/partner/operations.md) for rotation and day-two concerns.
+
+The toolkit produces most of the evidence for you:
+
+```bash
+npx fortress-csip conformance https://csip.your-company.example \
+  --cert ./test-client.pem --key ./test-client.key \
+  --out ./fortress-csip-evidence.json
+npx fortress-csip onboarding --template --out ./fortress-csip-handoff.json
+npx fortress-csip onboarding --validate ./fortress-csip-handoff.json
+```
 The normal deployed relationship is a partner-owned public HTTPS server on TCP 443. Fortress
 initiates every request with a connection-specific client certificate; the partner does not
 need private connectivity or inbound access to Fortress. One connection serves the sites in its
