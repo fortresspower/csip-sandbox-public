@@ -25,6 +25,9 @@ export function testContext(
     io,
     runProcess: unexpected('runProcess'),
     resolveHost: unexpected('resolveHost') as unknown as HostResolver,
+    fetch: unexpected('fetch') as unknown as typeof globalThis.fetch,
+    // Tests do not wait: polling loops are bounded by the injected clock and attempt count.
+    sleep: async () => {},
     repositoryRoot: REPOSITORY_ROOT,
     ...contextOverrides,
   };

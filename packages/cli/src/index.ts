@@ -31,6 +31,8 @@ export async function createNodeContext(
     io: createNodeIo(),
     runProcess: runNodeProcess,
     resolveHost: resolveNodeHost,
+    fetch: globalThis.fetch,
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     repositoryRoot: await findRepositoryRoot(dirname(fileURLToPath(import.meta.url))),
     ...overrides,
   };

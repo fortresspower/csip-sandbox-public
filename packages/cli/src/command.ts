@@ -16,6 +16,17 @@ export interface CommandContext {
   runProcess: ProcessRunner;
   /** Resolves hostnames to addresses. Used by `doctor` to enforce deployed DNS rules. */
   resolveHost: HostResolver;
+  /**
+   * Plain HTTP client, used only against the local demo stack on loopback. Partner-endpoint
+   * traffic goes through client-core's transport instead, which enforces the deployed TLS,
+   * DNS, redirect, and size rules that this does not.
+   */
+  fetch: typeof globalThis.fetch;
+  /**
+   * Delay between polls. Injected so that tests exercising the real polling loops finish in
+   * test time; a fake clock alone is not enough, because the delay itself is real.
+   */
+  sleep: (ms: number) => Promise<void>;
   /** Absolute path of the repository checkout the CLI was launched from. */
   repositoryRoot: string;
 }
