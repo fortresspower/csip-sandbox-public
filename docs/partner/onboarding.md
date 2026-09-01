@@ -11,23 +11,36 @@ separate site roster in Fortress.
 
 ## What each side provides
 
+The two sides trust each other in opposite directions, and it is worth being precise about
+which. Your **server** certificate uses ordinary public server trust: Fortress validates it
+through the standard public trust store, exactly as a browser would, and you do not supply
+Fortress a private or partner-specific server CA. Fortress's **client** certificate is the
+private identity: Fortress supplies you its public issuing chain during onboarding, and you
+install that issuer and separately allowlist the exact aggregator LFDI derived from the leaf.
+
 The partner provides:
 
 - one stable public HTTPS origin on TCP 443, backed by public DNS;
 - a server certificate issued by a CA in the standard public trust store;
-- the client-certificate issuer or issuers it accepts;
-- a server implementation that passes the conformance profile and evidence checklist;
-- list endpoints that honor Fortress requests for up to 500 items per page (required for the
-  100,000-site cadence, not merely optional pagination tuning);
-- an operator contact for certificate rotation, outages, and assignment changes; and
-- application allowlist entries for the active and, during rotation, staged Fortress
-  aggregator LFDIs.
+- a technical contact and an operations contact for certificate rotation, outages, and
+  assignment changes;
+- the requested fleet and cadence tier;
+- a completed conformance evidence artifact; and
+- a server implementation that passes the conformance profile and evidence checklist,
+  including list endpoints that honor Fortress requests for up to 500 items per page
+  (required for the 100,000-site cadence, not merely optional pagination tuning).
 
 Fortress provides:
 
 - the public chain for one connection-specific aggregator client certificate;
-- the aggregator LFDI computed from that certificate; and
-- the stable connection identifier and a proposed preflight window.
+- the aggregator LFDI computed from that certificate's leaf;
+- the SHA-256 fingerprint and expiry of that leaf;
+- the stable connection identifier; and
+- a proposed preflight window.
+
+The partner then does two things with that material: installs and trusts the supplied Fortress
+client issuer, and allowlists the exact aggregator LFDI — including, during rotation, the
+staged LFDI alongside the active one. Either check alone is insufficient.
 
 Fortress never sends the client private key to the partner. The partner never sends a
 per-device roster to Fortress. Fortress derives each partner-scoped EndDevice LFDI and
@@ -35,12 +48,13 @@ registers it in-band through the discovered EndDeviceList resource.
 
 ## The onboarding sequence
 
-1. The partner shares its origin, accepted client CA, and completed evidence checklist through
-   the approved secure channel. Fortress does not ingest or pin a partner-specific server CA.
+1. The partner shares its origin, contacts, requested fleet tier, and completed conformance
+   evidence artifact through the approved secure channel. Fortress does not ingest or pin a
+   partner-specific server CA; the partner's server is validated through public trust.
 2. Fortress creates an operator-paused connection and a connection-specific client certificate.
-3. Fortress computes the aggregator LFDI from the leaf certificate and gives the partner
-   the public certificate chain and LFDI. The partner trusts the issuer and allowlists that
-   exact LFDI; either check alone is insufficient.
+3. Fortress computes the aggregator LFDI from the leaf certificate and gives the partner the
+   public certificate chain, LFDI, fingerprint, and expiry. The partner installs the supplied
+   client issuer and allowlists that exact LFDI; either check alone is insufficient.
 4. Fortress verifies the server with the standard public trust store, completes mutual TLS,
    and fetches `/sep2/capability`. A wrong server name, untrusted server, untrusted client, or
    trusted-but-not-allowlisted client must fail.
@@ -111,4 +125,3 @@ storage requirement.
 
 - [Conformance profile](./conformance-profile.md)
 - [Evidence checklist](./evidence-checklist.md)
-- [Release bundle](./release-bundle.md)

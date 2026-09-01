@@ -8,10 +8,10 @@ import {
 } from '../src/index.js';
 import { controlXml, MemoryTransport } from './control-helpers.js';
 
-const HILDA = '1111111111111111111111111111111111111111';
+const DEVICE_ALPHA = '1111111111111111111111111111111111111111';
 const snapshot: AssignmentSnapshot = {
   valid: true,
-  devices: [{ lFDI: HILDA, programs: [{ mRID: 'p', primacy: 1, controlListHref: '/controls' }] }],
+  devices: [{ lFDI: DEVICE_ALPHA, programs: [{ mRID: 'p', primacy: 1, controlListHref: '/controls' }] }],
 };
 
 describe('CSIP session recovery', () => {

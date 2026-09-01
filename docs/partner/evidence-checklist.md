@@ -1,7 +1,18 @@
 # Partner readiness evidence checklist
 
-Complete this checklist before Fortress enables command polling. Evidence may be machine-readable
-test output, screenshots, or a short operator record. Redact private keys, tokens, raw XML payloads,
+Complete this checklist before Fortress enables command polling.
+
+Most of it is produced for you. Run:
+
+```bash
+npx fortress-csip conformance https://your-origin.example \
+  --cert ./test-client.pem --key ./test-client.key \
+  --out ./fortress-csip-evidence.json
+```
+
+and attach the generated evidence artifact. The sections below name what that artifact
+covers and what still needs a short operator record. Any evidence you add by hand — logs,
+screenshots, capacity measurements — must redact private keys, tokens, raw XML payloads,
 device serials, and unrelated customer data.
 
 ## Server and identity
@@ -18,7 +29,7 @@ device serials, and unrelated customer data.
 
 - [ ] DeviceCapability advertises Time, EndDeviceList, and MirrorUsagePointList.
 - [ ] Every list accepts `l=500`, returns no more than 500 items, and preserves its selected `l` in `next` links.
-- [ ] Dev evidence measures real telemetry p95 latency, sustainable writes/second, throttling, and retries at the requested fleet tier (the local 20 ms fixture is not substituted).
+- [ ] Capacity evidence measures real telemetry p95 latency, sustainable writes/second, throttling, and retries at the requested fleet tier, measured against the deployed origin (a local in-memory fixture is not a substitute).
 - [ ] The partner sustains the agreed staggered cadence; at 100,000 sites and 300 seconds this averages about 333 standard writes/second.
 - [ ] Resource paths can be treated as opaque; the test does not depend on numeric fixed paths.
 - [ ] Pagination, relative links, poll rates, and changed resource paths converge.
@@ -42,20 +53,12 @@ device serials, and unrelated customer data.
 - [ ] DER status and capability arrive when their destinations are advertised.
 - [ ] Missing measurements are absent rather than zero-filled.
 - [ ] A partner outage does not duplicate actuation.
-- [ ] An owed terminal response survives manager restart and is delivered after recovery.
+- [ ] An owed terminal response survives a Fortress-side service restart and is delivered after recovery.
 - [ ] Two connections using overlapping program or control IDs remain isolated.
 
-## Fortress rehearsal gate
-
-- [ ] Shadow mode proves TLS, registration, and assignments with zero device actuation.
-- [ ] HILDA proves the complete control loop through the normal manager and `ra-command` path.
-- [ ] HILDA finishes disarmed with the Fortress event window cleared.
-- [ ] The evidence chain joins connection, LFDI, wire mRID, internal event, site, outcome, and receipts.
-- [ ] If a physical lab run is required, it has a fresh staffed approval naming exactly one device,
-      bounded watts and duration, baseline restore authorization, and a stop owner.
-- [ ] A physical run finishes disarmed and restored; otherwise external enablement remains blocked.
-
 ## Handoff record
+
+This section is not produced by the toolkit. Record it alongside the evidence artifact.
 
 - [ ] Partner and Fortress operating contacts are named.
 - [ ] Certificate expiry and rotation owners are named.

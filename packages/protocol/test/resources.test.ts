@@ -27,10 +27,10 @@ describe('resources', () => {
       pollRate: 45,
       nextHref: '/partner/end-devices-v2?s=1',
       items: [{
-        href: '/partner/end-devices-v2/hilda-alpha',
+        href: '/partner/end-devices-v2/device-alpha-alpha',
         lFDI: '0123456789abcdef0123456789abcdef01234567',
         FunctionSetAssignmentsListLink: '/assignments/summer-a',
-        DERListLink: '/devices/hilda-alpha/ders',
+        DERListLink: '/devices/device-alpha-alpha/ders',
       }],
     };
 

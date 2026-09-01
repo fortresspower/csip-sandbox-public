@@ -16,8 +16,8 @@ import { createMemoryPersistenceState, MemoryPartnerPersistence } from '../src/p
 import type { PartnerPersistence } from '../src/persistence/port.js';
 
 const AGGREGATOR = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const HILDA = '1111111111111111111111111111111111111111';
-const LAB = '2222222222222222222222222222222222222222';
+const DEVICE_ALPHA = '1111111111111111111111111111111111111111';
+const DEVICE_BETA = '2222222222222222222222222222222222222222';
 const servers: Server[] = [];
 
 afterEach(async () => {
@@ -59,21 +59,21 @@ describe('production-shaped partner loop', () => {
     const resources = new ResourceClient({ transport, store: sessionStore });
     const enrollment = new EndDeviceEnrollment({ resources, store: sessionStore });
 
-    const hilda = await enrollment.reconcile('/sep2/capability', HILDA);
-    const lab = await enrollment.reconcile('/sep2/capability', LAB);
-    expect(hilda.href).not.toMatch(/\/\d+(?:\/|$)/);
-    expect(lab.href).not.toBe(hilda.href);
-    await domain.moveAssignment('partner-a', 'dispatch', HILDA);
+    const deviceAlpha = await enrollment.reconcile('/sep2/capability', DEVICE_ALPHA);
+    const deviceBeta = await enrollment.reconcile('/sep2/capability', DEVICE_BETA);
+    expect(deviceAlpha.href).not.toMatch(/\/\d+(?:\/|$)/);
+    expect(deviceBeta.href).not.toBe(deviceAlpha.href);
+    await domain.moveAssignment('partner-a', 'dispatch', DEVICE_ALPHA);
 
     const discovery = new AssignmentDiscovery({ resources, store: sessionStore });
-    let snapshot = await discovery.reconcile('/sep2/capability', new Set([HILDA, LAB]));
-    expect(snapshot.devices.find((device) => device.lFDI === HILDA)?.programs).toHaveLength(1);
-    expect(snapshot.devices.find((device) => device.lFDI === LAB)?.programs).toHaveLength(0);
+    let snapshot = await discovery.reconcile('/sep2/capability', new Set([DEVICE_ALPHA, DEVICE_BETA]));
+    expect(snapshot.devices.find((device) => device.lFDI === DEVICE_ALPHA)?.programs).toHaveLength(1);
+    expect(snapshot.devices.find((device) => device.lFDI === DEVICE_BETA)?.programs).toHaveLength(0);
 
     await domain.publishControl({
       connectionId: 'partner-a',
       programId: 'dispatch',
-      mRID: 'hilda-discharge',
+      mRID: 'device-alpha-discharge',
       start: clock,
       duration: 300,
       opModFixedW: -3_000,
@@ -89,8 +89,8 @@ describe('production-shaped partner loop', () => {
         async updateLifecycle() {},
       },
     });
-    expect(await session.runOnce(snapshot)).toMatchObject({ delivered: [expect.objectContaining({ wireMrid: 'hilda-discharge' })] });
-    expect(dispatched[0].assignedLFDIs).toEqual([HILDA]);
+    expect(await session.runOnce(snapshot)).toMatchObject({ delivered: [expect.objectContaining({ wireMrid: 'device-alpha-discharge' })] });
+    expect(dispatched[0].assignedLFDIs).toEqual([DEVICE_ALPHA]);
     await session.recordOutcome(dispatched[0].internalEventId, 'started');
     await session.recordOutcome(dispatched[0].internalEventId, 'completed');
     expect(await session.flushResponses()).toEqual({ sent: 2, failed: 0 });
@@ -104,7 +104,7 @@ describe('production-shaped partner loop', () => {
       },
       now: () => clock,
     });
-    const [profile] = await telemetry.discover('/sep2/capability', new Set([HILDA]));
+    const [profile] = await telemetry.discover('/sep2/capability', new Set([DEVICE_ALPHA]));
     expect(await telemetry.publish(profile)).toMatchObject({ sent: 3, quarantined: 0 });
     expect((await domain.responses('partner-a')).map((entry) => entry.category)).toEqual(expect.arrayContaining([
       'status-1', 'status-2', 'status-3',
@@ -112,30 +112,30 @@ describe('production-shaped partner loop', () => {
     const responseHref = dispatched[0].replyTo!;
     await resources.postControlResponse(responseHref, {
       createdDateTime: clock,
-      endDeviceLFDI: HILDA,
+      endDeviceLFDI: DEVICE_ALPHA,
       status: 3,
-      subject: 'hilda-discharge',
+      subject: 'device-alpha-discharge',
     });
     expect(await domain.responses('partner-a')).toHaveLength(3);
     expect((await domain.telemetry('partner-a')).map((entry) => entry.category)).toEqual(expect.arrayContaining([
       'mup-standard', 'mup-extensions', 'der-status',
     ]));
 
-    await domain.moveAssignment('partner-a', 'dispatch', LAB);
+    await domain.moveAssignment('partner-a', 'dispatch', DEVICE_BETA);
     clock += 300;
-    snapshot = await discovery.reconcile('/sep2/capability', new Set([HILDA, LAB]));
-    expect(snapshot.devices.find((device) => device.lFDI === HILDA)?.programs).toHaveLength(0);
-    expect(snapshot.devices.find((device) => device.lFDI === LAB)?.programs).toHaveLength(1);
+    snapshot = await discovery.reconcile('/sep2/capability', new Set([DEVICE_ALPHA, DEVICE_BETA]));
+    expect(snapshot.devices.find((device) => device.lFDI === DEVICE_ALPHA)?.programs).toHaveLength(0);
+    expect(snapshot.devices.find((device) => device.lFDI === DEVICE_BETA)?.programs).toHaveLength(1);
     await domain.publishControl({
       connectionId: 'partner-a',
       programId: 'dispatch',
-      mRID: 'lab-charge',
+      mRID: 'device-beta-charge',
       start: clock,
       duration: 300,
       opModFixedW: 1_000,
     });
     await session.runOnce(snapshot);
-    expect(dispatched.at(-1)).toMatchObject({ wireMrid: 'lab-charge', assignedLFDIs: [LAB] });
+    expect(dispatched.at(-1)).toMatchObject({ wireMrid: 'device-beta-charge', assignedLFDIs: [DEVICE_BETA] });
     transport.close();
   });
 
@@ -160,7 +160,7 @@ describe('production-shaped partner loop', () => {
     });
     await domain.createConnection('partner-a', AGGREGATOR);
     await domain.createConnection('partner-b', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
-    const { device } = await domain.registerDevice('partner-a', HILDA);
+    const { device } = await domain.registerDevice('partner-a', DEVICE_ALPHA);
     const status = '<DERStatus xmlns="urn:ieee:std:2030.5:ns"><readingTime>1</readingTime></DERStatus>';
 
     expect((await request(app).put(`/sep2/r/${device.token}/status`)
@@ -182,8 +182,8 @@ describe('production-shaped partner loop', () => {
     });
     await domain.createConnection('partner-a', AGGREGATOR);
     const program = await domain.createProgram('partner-a', 'dispatch', 'remote-dispatch');
-    await domain.registerDevice('partner-a', HILDA);
-    await domain.moveAssignment('partner-a', 'dispatch', HILDA);
+    await domain.registerDevice('partner-a', DEVICE_ALPHA);
+    await domain.moveAssignment('partner-a', 'dispatch', DEVICE_ALPHA);
     await domain.publishControl({
       connectionId: 'partner-a',
       programId: 'dispatch',
@@ -197,7 +197,7 @@ describe('production-shaped partner loop', () => {
       .post(`/sep2/r/${program.token}/responses`)
       .set('Content-Type', 'application/sep+xml')
       .send(`<?xml version="1.0"?><DERControlResponse xmlns="urn:ieee:std:2030.5:ns">
-        <createdDateTime>${clock}</createdDateTime><endDeviceLFDI>${HILDA}</endDeviceLFDI>
+        <createdDateTime>${clock}</createdDateTime><endDeviceLFDI>${DEVICE_ALPHA}</endDeviceLFDI>
         <status>4</status><subject>declined-control</subject></DERControlResponse>`);
     expect(response.status).toBe(201);
 
@@ -232,8 +232,8 @@ describe('production-shaped partner loop', () => {
     const persistence = new MemoryPartnerPersistence();
     const { app, domain } = makePartnerApp({ persistence, resolveConnection: () => 'partner-a' });
     await domain.createConnection('partner-a', AGGREGATOR);
-    await domain.registerDevice('partner-a', HILDA);
-    await domain.registerDevice('partner-a', LAB);
+    await domain.registerDevice('partner-a', DEVICE_ALPHA);
+    await domain.registerDevice('partner-a', DEVICE_BETA);
     const capability = await request(app).get('/sep2/capability');
     const listHref = /EndDeviceListLink href="([^"]+)"/.exec(capability.text)?.[1];
     expect(listHref).toMatch(/^\/sep2\/r\/c-[0-9a-f]+\/devices$/);

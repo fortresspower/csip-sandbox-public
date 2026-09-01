@@ -6,8 +6,8 @@ import type { PartnerPersistence } from '../src/persistence/port.js';
 import { PartnerDomain } from '../src/partner-domain.js';
 
 const AGGREGATOR = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const HILDA = '1111111111111111111111111111111111111111';
-const LAB = '2222222222222222222222222222222222222222';
+const DEVICE_ALPHA = '1111111111111111111111111111111111111111';
+const DEVICE_BETA = '2222222222222222222222222222222222222222';
 
 type PersistencePair = { first: PartnerPersistence; restart: () => PartnerPersistence };
 
@@ -38,22 +38,22 @@ for (const [name, factory] of [
       const first = new PartnerDomain({ persistence: pair.first, now: () => clock });
       await first.createConnection('partner-a', AGGREGATOR);
       await first.createProgram('partner-a', 'dispatch', 'partner-program', 7);
-      await first.registerDevice('partner-a', HILDA);
-      await first.registerDevice('partner-a', LAB);
-      await first.moveAssignment('partner-a', 'dispatch', HILDA);
+      await first.registerDevice('partner-a', DEVICE_ALPHA);
+      await first.registerDevice('partner-a', DEVICE_BETA);
+      await first.moveAssignment('partner-a', 'dispatch', DEVICE_ALPHA);
 
       clock += 10;
       const restarted = new PartnerDomain({ persistence: pair.restart(), now: () => clock });
       expect(await restarted.connection('partner-a')).toMatchObject({ aggregatorLfdi: AGGREGATOR });
       expect(await restarted.devices('partner-a')).toEqual(expect.arrayContaining([
-        expect.objectContaining({ lFDI: HILDA, assignedProgramIds: ['dispatch'] }),
-        expect.objectContaining({ lFDI: LAB, assignedProgramIds: [] }),
+        expect.objectContaining({ lFDI: DEVICE_ALPHA, assignedProgramIds: ['dispatch'] }),
+        expect.objectContaining({ lFDI: DEVICE_BETA, assignedProgramIds: [] }),
       ]));
 
-      await restarted.moveAssignment('partner-a', 'dispatch', LAB);
+      await restarted.moveAssignment('partner-a', 'dispatch', DEVICE_BETA);
       expect(await restarted.devices('partner-a')).toEqual(expect.arrayContaining([
-        expect.objectContaining({ lFDI: HILDA, assignedProgramIds: [] }),
-        expect.objectContaining({ lFDI: LAB, assignedProgramIds: ['dispatch'] }),
+        expect.objectContaining({ lFDI: DEVICE_ALPHA, assignedProgramIds: [] }),
+        expect.objectContaining({ lFDI: DEVICE_BETA, assignedProgramIds: ['dispatch'] }),
       ]));
     });
 
@@ -62,9 +62,9 @@ for (const [name, factory] of [
       const domain = new PartnerDomain({ persistence: pair.first, now: () => 1_000 });
       await domain.createConnection('partner-a', AGGREGATOR);
       await domain.createConnection('partner-b', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
-      expect((await domain.registerDevice('partner-a', HILDA)).created).toBe(true);
-      expect((await domain.registerDevice('partner-a', HILDA)).created).toBe(false);
-      await domain.recordExchange({ connectionId: 'partner-a', recordType: 'telemetry', category: 'mup-standard', deviceLfdi: HILDA });
+      expect((await domain.registerDevice('partner-a', DEVICE_ALPHA)).created).toBe(true);
+      expect((await domain.registerDevice('partner-a', DEVICE_ALPHA)).created).toBe(false);
+      await domain.recordExchange({ connectionId: 'partner-a', recordType: 'telemetry', category: 'mup-standard', deviceLfdi: DEVICE_ALPHA });
       expect(await domain.telemetry('partner-a')).toHaveLength(1);
       expect(await domain.telemetry('partner-b')).toHaveLength(0);
       expect((await pair.first.findConnectionByAggregatorLfdi(AGGREGATOR))?.connectionId).toBe('partner-a');
@@ -115,7 +115,7 @@ for (const [name, factory] of [['memory', memoryPair], ['dynamodb', dynamoPair]]
       const domain = new PartnerDomain({ persistence: pair.first, now: () => clock, retention: { historySeconds: 30 } });
       await domain.createConnection('partner-a', AGGREGATOR);
       await domain.createProgram('partner-a', 'dispatch', 'partner-program');
-      await domain.registerDevice('partner-a', HILDA);
+      await domain.registerDevice('partner-a', DEVICE_ALPHA);
       await domain.publishControl({ connectionId: 'partner-a', programId: 'dispatch', mRID: 'control-a', start: 100, duration: 60, opModFixedW: -500 });
       await domain.completeControl('partner-a', 'control-a', 3);
       await domain.recordExchange({ connectionId: 'partner-a', recordType: 'response', category: 'status-3', subject: 'control-a' });

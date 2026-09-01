@@ -83,16 +83,16 @@ describe('xml', () => {
       nextHref: '/partner/end-devices-v2?s=1',
     });
     expect(endDevices.items[0]).toEqual({
-      href: '/partner/end-devices-v2/hilda-alpha',
+      href: '/partner/end-devices-v2/device-alpha-alpha',
       lFDI: '0123456789abcdef0123456789abcdef01234567',
       FunctionSetAssignmentsListLink: '/assignments/summer-a',
-      DERListLink: '/devices/hilda-alpha/ders',
+      DERListLink: '/devices/device-alpha-alpha/ders',
     });
 
     const assignments = parseFunctionSetAssignmentsList(fixture('fsa-list.xml'));
     expect(assignments.items[0]).toEqual({
       href: '/assignments/summer-a/primary',
-      mRID: 'FSA-HILDA-A',
+      mRID: 'FSA-DEVICE-ALPHA-A',
       DERProgramListLink: '/programs/blue-fleet',
     });
 
@@ -119,8 +119,8 @@ describe('xml', () => {
     expect(parseDERControlResponse(serializeDERControlResponse(response))).toEqual(response);
 
     const usagePoint = {
-      mRID: 'MUP-HILDA-A',
-      description: 'HILDA standard lane',
+      mRID: 'MUP-DEVICE-ALPHA-A',
+      description: 'DEVICE_ALPHA standard lane',
       postRate: 300,
       deviceLFDI: response.endDeviceLFDI,
       MirrorMeterReadings: [{

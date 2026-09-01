@@ -40,7 +40,7 @@ Open **`http://localhost:7001/`** for a developer console to drive and observe t
 - **Dispatch** — compose `opModConnect` / `opModMaxLimW` / `opModFixedW` + an mRID (with
   presets) and watch the closed loop respond live, with a DERControl XML preview.
 - **Telemetry** — the canonical 2030.5 telemetry **read**, with the point catalog folded in.
-  Pick points by mRID (official or `fortress:`) from an FMP-style points drawer (search,
+  Pick points by mRID (official or `fortress:`) from a searchable point drawer (search,
   Standard/Extended/Complete detail level, lane/tier facets, the full ~750-point dictionary
   grouped by SunSpec model), choose a window (*Latest · Last hour · Last 24h · Walk all*),
   and watch the live `GET /mup/{m}/mr?a=&s=&l=` request preview and the paginated

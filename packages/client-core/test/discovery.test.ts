@@ -9,8 +9,8 @@ import {
 } from '../src/index.js';
 import { link, startFixture, xml, type RunningFixture } from './fixture-server.js';
 
-const HILDA = '1111111111111111111111111111111111111111';
-const LAB = '2222222222222222222222222222222222222222';
+const DEVICE_ALPHA = '1111111111111111111111111111111111111111';
+const DEVICE_BETA = '2222222222222222222222222222222222222222';
 
 interface GraphState {
   assignments: Record<string, 'alpha' | 'beta' | 'none'>;
@@ -42,25 +42,25 @@ function graphHandler(prefix: string, state: GraphState) {
       return;
     }
     if (path === `${prefix}/devices/page-a`) {
-      const hilda = `<EndDevice href="${prefix}/devices/hilda"><lFDI>${HILDA}</lFDI>${link('FunctionSetAssignmentsListLink', `${prefix}/assign/hilda`)}</EndDevice>`;
-      const duplicate = state.duplicate ? hilda : '';
+      const deviceAlpha = `<EndDevice href="${prefix}/devices/device-alpha"><lFDI>${DEVICE_ALPHA}</lFDI>${link('FunctionSetAssignmentsListLink', `${prefix}/assign/device-alpha`)}</EndDevice>`;
+      const duplicate = state.duplicate ? deviceAlpha : '';
       const unknown = state.unknown
         ? `<EndDevice href="${prefix}/devices/unknown"><lFDI>3333333333333333333333333333333333333333</lFDI></EndDevice>`
         : '';
       const extraCount = Number(state.duplicate ?? false) + Number(state.unknown ?? false);
       const total = 2 + extraCount;
       const next = state.cycle ? `${prefix}/devices/page-a` : `${prefix}/devices/page-z`;
-      send(response, xml('EndDeviceList', `${hilda}${duplicate}${unknown}<Link rel="next" href="${next}"/>`, ` all="${total}" results="${1 + extraCount}"`), state.etag);
+      send(response, xml('EndDeviceList', `${deviceAlpha}${duplicate}${unknown}<Link rel="next" href="${next}"/>`, ` all="${total}" results="${1 + extraCount}"`), state.etag);
       return;
     }
     if (path === `${prefix}/devices/page-z`) {
-      const lab = `<EndDevice href="${prefix}/devices/lab"><lFDI>${LAB}</lFDI>${link('FunctionSetAssignmentsListLink', `${prefix}/assign/lab`)}</EndDevice>`;
+      const deviceBeta = `<EndDevice href="${prefix}/devices/device-beta"><lFDI>${DEVICE_BETA}</lFDI>${link('FunctionSetAssignmentsListLink', `${prefix}/assign/device-beta`)}</EndDevice>`;
       const total = 2 + Number(state.duplicate ?? false) + Number(state.unknown ?? false);
-      send(response, xml('EndDeviceList', lab, ` all="${total}" results="1"`), state.etag);
+      send(response, xml('EndDeviceList', deviceBeta, ` all="${total}" results="1"`), state.etag);
       return;
     }
 
-    const assignmentMatch = path.match(new RegExp(`^${prefix}/assign/(hilda|lab)$`));
+    const assignmentMatch = path.match(new RegExp(`^${prefix}/assign/(device-alpha|device-beta)$`));
     if (assignmentMatch) {
       const device = assignmentMatch[1];
       const assigned = state.assignments[device];
@@ -95,7 +95,7 @@ describe('assignment discovery', () => {
 
   it('walks randomized, paginated links and treats partner assignment changes as authoritative', async () => {
     const state: GraphState = {
-      assignments: { hilda: 'alpha', lab: 'beta' },
+      assignments: { 'device-alpha': 'alpha', 'device-beta': 'beta' },
       etag: 1,
       sawConditionalGet: false,
     };
@@ -108,20 +108,20 @@ describe('assignment discovery', () => {
       store,
     });
 
-    const initial = await discovery.reconcile(`${fixture.prefix}/capability`, new Set([HILDA, LAB]));
+    const initial = await discovery.reconcile(`${fixture.prefix}/capability`, new Set([DEVICE_ALPHA, DEVICE_BETA]));
     expect(initial.valid).toBe(true);
-    expect(assignments(initial, HILDA)).toEqual(['alpha']);
-    expect(assignments(initial, LAB)).toEqual(['beta']);
+    expect(assignments(initial, DEVICE_ALPHA)).toEqual(['alpha']);
+    expect(assignments(initial, DEVICE_BETA)).toEqual(['beta']);
 
-    await discovery.reconcile(`${fixture.prefix}/capability`, new Set([HILDA, LAB]));
+    await discovery.reconcile(`${fixture.prefix}/capability`, new Set([DEVICE_ALPHA, DEVICE_BETA]));
     expect(state.sawConditionalGet).toBe(true);
 
-    state.assignments.hilda = 'beta';
+    state.assignments['device-alpha'] = 'beta';
     state.etag += 1;
-    const moved = await discovery.reconcile(`${fixture.prefix}/capability`, new Set([HILDA, LAB]));
-    expect(assignments(moved, HILDA)).toEqual(['beta']);
-    expect(assignments(moved, LAB)).toEqual(['beta']);
-    expect(moved.devices.map((device) => device.lFDI)).toEqual([HILDA, LAB]);
+    const moved = await discovery.reconcile(`${fixture.prefix}/capability`, new Set([DEVICE_ALPHA, DEVICE_BETA]));
+    expect(assignments(moved, DEVICE_ALPHA)).toEqual(['beta']);
+    expect(assignments(moved, DEVICE_BETA)).toEqual(['beta']);
+    expect(moved.devices.map((device) => device.lFDI)).toEqual([DEVICE_ALPHA, DEVICE_BETA]);
   });
 
   it.each([
@@ -132,7 +132,7 @@ describe('assignment discovery', () => {
     ['partially failed graph', { failProgram: true }],
   ])('fails closed for %s and clears any previous target snapshot', async (_name, fault) => {
     const state: GraphState = {
-      assignments: { hilda: 'alpha', lab: 'beta' },
+      assignments: { 'device-alpha': 'alpha', 'device-beta': 'beta' },
       etag: 1,
       sawConditionalGet: false,
       ...fault,
@@ -143,7 +143,7 @@ describe('assignment discovery', () => {
     const store = new MemorySessionStore();
     await store.saveAssignmentSnapshot({
       valid: true,
-      devices: [{ lFDI: HILDA, programs: [{ mRID: 'stale', primacy: 1, controlListHref: '/stale' }] }],
+      devices: [{ lFDI: DEVICE_ALPHA, programs: [{ mRID: 'stale', primacy: 1, controlListHref: '/stale' }] }],
     });
     const discovery = new AssignmentDiscovery({
       resources: new ResourceClient({ transport: fixture.transport, store, maxPages: 4 }),
@@ -151,7 +151,7 @@ describe('assignment discovery', () => {
       maxResources: 16,
     });
 
-    await expect(discovery.reconcile(`${fixture.prefix}/capability`, new Set([HILDA, LAB])))
+    await expect(discovery.reconcile(`${fixture.prefix}/capability`, new Set([DEVICE_ALPHA, DEVICE_BETA])))
       .rejects.toBeInstanceOf(CsipDiscoveryError);
     expect(await store.loadAssignmentSnapshot()).toMatchObject({ valid: false, devices: [] });
   });
@@ -159,14 +159,14 @@ describe('assignment discovery', () => {
   it('converges when a previously visible EndDevice is removed', async () => {
     const store = new MemorySessionStore();
     const state: GraphState = {
-      assignments: { hilda: 'alpha', lab: 'none' },
+      assignments: { 'device-alpha': 'alpha', 'device-beta': 'none' },
       etag: 1,
       sawConditionalGet: false,
     };
     let fixture!: RunningFixture;
     fixture = await startFixture((request, response) => {
       if (new URL(request.url ?? '/', 'http://fixture').pathname === `${fixture.prefix}/devices/page-a`) {
-        const item = `<EndDevice href="${fixture.prefix}/devices/hilda"><lFDI>${HILDA}</lFDI>${link('FunctionSetAssignmentsListLink', `${fixture.prefix}/assign/hilda`)}</EndDevice>`;
+        const item = `<EndDevice href="${fixture.prefix}/devices/device-alpha"><lFDI>${DEVICE_ALPHA}</lFDI>${link('FunctionSetAssignmentsListLink', `${fixture.prefix}/assign/device-alpha`)}</EndDevice>`;
         send(response, xml('EndDeviceList', item, ' all="1" results="1"'), state.etag);
         return;
       }
@@ -174,13 +174,13 @@ describe('assignment discovery', () => {
     });
     fixtures.push(fixture);
     const discovery = new AssignmentDiscovery({ resources: new ResourceClient({ transport: fixture.transport, store }), store });
-    const snapshot = await discovery.reconcile(`${fixture.prefix}/capability`, new Set([HILDA, LAB]));
-    expect(snapshot.devices.map((device) => device.lFDI)).toEqual([HILDA]);
+    const snapshot = await discovery.reconcile(`${fixture.prefix}/capability`, new Set([DEVICE_ALPHA, DEVICE_BETA]));
+    expect(snapshot.devices.map((device) => device.lFDI)).toEqual([DEVICE_ALPHA]);
   });
 
   it('keeps known registrations visible while excluding execution-ineligible assignments', async () => {
     const state: GraphState = {
-      assignments: { hilda: 'alpha', lab: 'beta' },
+      assignments: { 'device-alpha': 'alpha', 'device-beta': 'beta' },
       etag: 1,
       sawConditionalGet: false,
     };
@@ -195,13 +195,13 @@ describe('assignment discovery', () => {
 
     const snapshot = await discovery.reconcile(
       `${fixture.prefix}/capability`,
-      new Set([HILDA, LAB]),
-      new Set([HILDA]),
+      new Set([DEVICE_ALPHA, DEVICE_BETA]),
+      new Set([DEVICE_ALPHA]),
     );
 
-    expect(snapshot.devices.map((device) => device.lFDI)).toEqual([HILDA, LAB]);
-    expect(assignments(snapshot, HILDA)).toEqual(['alpha']);
-    expect(assignments(snapshot, LAB)).toEqual([]);
+    expect(snapshot.devices.map((device) => device.lFDI)).toEqual([DEVICE_ALPHA, DEVICE_BETA]);
+    expect(assignments(snapshot, DEVICE_ALPHA)).toEqual(['alpha']);
+    expect(assignments(snapshot, DEVICE_BETA)).toEqual([]);
   });
 
   it('bounds nested reads and deduplicates identical assignment hrefs', async () => {

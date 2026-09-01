@@ -18,7 +18,7 @@ import {
 } from '../src/index.js';
 import { MemoryTransport } from './control-helpers.js';
 
-const HILDA = '1111111111111111111111111111111111111111';
+const DEVICE_ALPHA = '1111111111111111111111111111111111111111';
 
 function telemetryGraph(transport: MemoryTransport, postRate = 120, extensionPostRate = 600): void {
   transport.getBodies.set('/graph/capability', () => `
@@ -27,16 +27,16 @@ function telemetryGraph(transport: MemoryTransport, postRate = 120, extensionPos
     </DeviceCapability>`);
   transport.getBodies.set('/graph/devices', () => `
     <EndDeviceList xmlns="urn:ieee:std:2030.5:ns" all="1" results="1">
-      <EndDevice href="/graph/devices/hilda"><lFDI>${HILDA}</lFDI><DERListLink href="/graph/ders/hilda"/></EndDevice>
+      <EndDevice href="/graph/devices/device-alpha"><lFDI>${DEVICE_ALPHA}</lFDI><DERListLink href="/graph/ders/device-alpha"/></EndDevice>
     </EndDeviceList>`);
   transport.getBodies.set('/graph/mups', () => `
     <MirrorUsagePointList xmlns="urn:ieee:std:2030.5:ns" all="2" results="2">
-      <MirrorUsagePoint href="/posting/hilda/standard"><mRID>MUP-HILDA</mRID><postRate>${postRate}</postRate><deviceLFDI>${HILDA}</deviceLFDI></MirrorUsagePoint>
-      <MirrorUsagePoint href="/posting/hilda/extensions"><mRID>fortress:hilda</mRID><postRate>${extensionPostRate}</postRate><deviceLFDI>${HILDA}</deviceLFDI></MirrorUsagePoint>
+      <MirrorUsagePoint href="/posting/device-alpha/standard"><mRID>MUP-DEVICE-ALPHA</mRID><postRate>${postRate}</postRate><deviceLFDI>${DEVICE_ALPHA}</deviceLFDI></MirrorUsagePoint>
+      <MirrorUsagePoint href="/posting/device-alpha/extensions"><mRID>fortress:device-alpha</mRID><postRate>${extensionPostRate}</postRate><deviceLFDI>${DEVICE_ALPHA}</deviceLFDI></MirrorUsagePoint>
     </MirrorUsagePointList>`);
-  transport.getBodies.set('/graph/ders/hilda', () => `
+  transport.getBodies.set('/graph/ders/device-alpha', () => `
     <DERList xmlns="urn:ieee:std:2030.5:ns" all="1" results="1">
-      <DER href="/graph/ders/hilda/main"><DERStatusLink href="/posting/hilda/status"/><DERCapabilityLink href="/posting/hilda/capability"/></DER>
+      <DER href="/graph/ders/device-alpha/main"><DERStatusLink href="/posting/device-alpha/status"/><DERCapabilityLink href="/posting/device-alpha/capability"/></DER>
     </DERList>`);
 }
 
@@ -126,32 +126,32 @@ describe('telemetry publication', () => {
       now: () => 1_725_000_000,
     });
 
-    const [profile] = await publisher.discover('/graph/capability', new Set([HILDA]));
+    const [profile] = await publisher.discover('/graph/capability', new Set([DEVICE_ALPHA]));
     expect(profile).toMatchObject({
-      lFDI: HILDA,
+      lFDI: DEVICE_ALPHA,
       intervalSeconds: 300,
       rateClamped: true,
-      standardMupHref: '/posting/hilda/standard',
-      extensionMupHref: '/posting/hilda/extensions',
+      standardMupHref: '/posting/device-alpha/standard',
+      extensionMupHref: '/posting/device-alpha/extensions',
       extensionIntervalSeconds: 600,
-      derStatusHref: '/posting/hilda/status',
-      derCapabilityHref: '/posting/hilda/capability',
+      derStatusHref: '/posting/device-alpha/status',
+      derCapabilityHref: '/posting/device-alpha/capability',
     });
 
     expect(await publisher.publish(profile)).toEqual({ queued: 4, sent: 4, retryableFailures: 0, quarantined: 0, backpressured: 0 });
-    const standard = transport.requests.find((request) => request.href === '/posting/hilda/standard')!;
+    const standard = transport.requests.find((request) => request.href === '/posting/device-alpha/standard')!;
     const standardMup = parseMirrorUsagePoint(standard.body!);
-    expect(standardMup.deviceLFDI).toBe(HILDA);
+    expect(standardMup.deviceLFDI).toBe(DEVICE_ALPHA);
     expect(standardMup.MirrorMeterReadings.map((reading) => reading.ReadingType.uom)).toEqual([38, 63, 33, 29]);
     expect(standardMup.MirrorMeterReadings.every((reading) => reading.Reading.timePeriod.start === 1_725_000_000)).toBe(true);
 
     const extension = parseMirrorUsagePoint(
-      transport.requests.find((request) => request.href === '/posting/hilda/extensions')!.body!,
+      transport.requests.find((request) => request.href === '/posting/device-alpha/extensions')!.body!,
     );
     expect(extension.MirrorMeterReadings.map((reading) => reading.ReadingType.mRID)).toEqual(['fortress:soh']);
-    expect(parseDERStatus(transport.requests.find((request) => request.href === '/posting/hilda/status')!.body!))
+    expect(parseDERStatus(transport.requests.find((request) => request.href === '/posting/device-alpha/status')!.body!))
       .toMatchObject({ stateOfChargeStatus: { value: 54 }, alarmStatus: { value: 0 } });
-    expect(parseDERCapability(transport.requests.find((request) => request.href === '/posting/hilda/capability')!.body!))
+    expect(parseDERCapability(transport.requests.find((request) => request.href === '/posting/device-alpha/capability')!.body!))
       .toMatchObject({ rtgMaxWh: 13_500, rtgMaxChargeRateW: 5_000, rtgMaxDischargeRateW: 5_000 });
 
     expect(await publisher.publish(profile)).toEqual({ queued: 0, sent: 0, retryableFailures: 0, quarantined: 0, backpressured: 0 });
@@ -167,18 +167,18 @@ describe('telemetry publication', () => {
       now: () => clock,
       staggerInitialRun: false,
     });
-    const [profile] = await publisher.discover('/graph/capability', new Set([HILDA]));
+    const [profile] = await publisher.discover('/graph/capability', new Set([DEVICE_ALPHA]));
 
     await publisher.runDue([profile]);
     clock += 300;
     await publisher.runDue([profile]);
-    expect(transport.requests.filter((request) => request.href === '/posting/hilda/standard')).toHaveLength(2);
-    expect(transport.requests.filter((request) => request.href === '/posting/hilda/extensions')).toHaveLength(1);
+    expect(transport.requests.filter((request) => request.href === '/posting/device-alpha/standard')).toHaveLength(2);
+    expect(transport.requests.filter((request) => request.href === '/posting/device-alpha/extensions')).toHaveLength(1);
 
     clock += 300;
     await publisher.runDue([profile]);
-    expect(transport.requests.filter((request) => request.href === '/posting/hilda/standard')).toHaveLength(3);
-    expect(transport.requests.filter((request) => request.href === '/posting/hilda/extensions')).toHaveLength(2);
+    expect(transport.requests.filter((request) => request.href === '/posting/device-alpha/standard')).toHaveLength(3);
+    expect(transport.requests.filter((request) => request.href === '/posting/device-alpha/extensions')).toHaveLength(2);
   });
 
   it('omits unavailable optional values instead of fabricating zeros and honors a slower server rate', async () => {
@@ -193,7 +193,7 @@ describe('telemetry publication', () => {
       now: () => clock,
       staggerInitialRun: false,
     });
-    const [profile] = await publisher.discover('/graph/capability', new Set([HILDA]));
+    const [profile] = await publisher.discover('/graph/capability', new Set([DEVICE_ALPHA]));
     expect(profile).toMatchObject({ intervalSeconds: 900, rateClamped: false });
 
     await publisher.runDue([profile]);
@@ -204,12 +204,12 @@ describe('telemetry publication', () => {
     await publisher.runDue([profile]);
     expect(reads).toBe(2);
 
-    const standardPosts = transport.requests.filter((request) => request.href === '/posting/hilda/standard');
+    const standardPosts = transport.requests.filter((request) => request.href === '/posting/device-alpha/standard');
     const latest = parseMirrorUsagePoint(standardPosts.at(-1)!.body!);
     expect(latest.MirrorMeterReadings).toHaveLength(1);
     expect(latest.MirrorMeterReadings[0].ReadingType.uom).toBe(38);
-    expect(transport.requests.some((request) => request.href === '/posting/hilda/status')).toBe(false);
-    expect(transport.requests.some((request) => request.href === '/posting/hilda/capability')).toBe(false);
+    expect(transport.requests.some((request) => request.href === '/posting/device-alpha/status')).toBe(false);
+    expect(transport.requests.some((request) => request.href === '/posting/device-alpha/capability')).toBe(false);
   });
 
   it('retries transient posting failures and quarantines permanent or malformed samples', async () => {
@@ -223,7 +223,7 @@ describe('telemetry publication', () => {
       now: () => 1_725_000_000,
       maxQueue: 8,
     });
-    const [profile] = await publisher.discover('/graph/capability', new Set([HILDA]));
+    const [profile] = await publisher.discover('/graph/capability', new Set([DEVICE_ALPHA]));
 
     transport.failNextPost = true;
     expect(await publisher.publish(profile)).toMatchObject({ retryableFailures: 1 });
@@ -251,7 +251,7 @@ describe('telemetry publication', () => {
       now: () => 1_725_000_000,
       maxQueue: 8,
     });
-    const [profile] = await publisher.discover('/graph/capability', new Set([HILDA]));
+    const [profile] = await publisher.discover('/graph/capability', new Set([DEVICE_ALPHA]));
 
     transport.failNextPost = true;
     expect(await publisher.publish(profile)).toMatchObject({ retryableFailures: 1 });
@@ -437,7 +437,7 @@ describe('telemetry publication', () => {
       source: { async read() { reads += 1; return { timestamp: 1, activePowerW: 1 }; } },
       maxProfiles: 1,
     });
-    const profiles: TelemetryProfile[] = [HILDA, '2222222222222222222222222222222222222222'].map((lFDI) => ({
+    const profiles: TelemetryProfile[] = [DEVICE_ALPHA, '2222222222222222222222222222222222222222'].map((lFDI) => ({
       lFDI,
       intervalSeconds: 300,
       rateClamped: false,
@@ -461,7 +461,7 @@ describe('telemetry publication', () => {
         await new Promise((resolve) => setTimeout(resolve, 5));
         if (fail) {
           fail = false;
-          throw new CsipRetryableServerError(method, '/posting/hilda', 503, 'retry');
+          throw new CsipRetryableServerError(method, '/posting/device-alpha', 503, 'retry');
         }
         return { status: 201, headers: {}, body: '' };
       },
@@ -476,11 +476,11 @@ describe('telemetry publication', () => {
       concurrency: 2,
     });
     const profile: TelemetryProfile = {
-      lFDI: HILDA,
+      lFDI: DEVICE_ALPHA,
       intervalSeconds: 300,
       rateClamped: false,
-      standardMupHref: '/posting/hilda',
-      standardMupMrid: 'mup-hilda',
+      standardMupHref: '/posting/device-alpha',
+      standardMupMrid: 'mup-device-alpha',
     };
 
     await expect(publisher.publish(profile)).resolves.toMatchObject({ retryableFailures: 1 });
