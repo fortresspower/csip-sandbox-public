@@ -1,7 +1,4 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { makePartnerApp } from './partner-app.js';
-import { DynamoPartnerPersistence } from './persistence/dynamodb.js';
 import type { PartnerPersistence, RetentionPolicy } from './persistence/port.js';
 import type { ConnectionResolver } from './partner-routes.js';
 import { verifiedLeafConnectionResolver } from './verified-leaf-auth.js';
@@ -16,38 +13,13 @@ export interface ProductionPartnerAppOptions {
 /**
  * Production protocol/domain composition independent of the selected storage adapter.
  * Deployment-specific composition roots may supply DynamoDB, SQL, or partner-owned storage.
+ *
+ * This module deliberately imports no storage SDK. The DynamoDB composition root lives in
+ * `production-dynamodb.ts`, so a caller that composes its own persistence — the toolkit's
+ * loopback mTLS rehearsal, for instance — does not pay to load a cloud SDK it never uses.
  */
 export function makeProductionPartnerApp(options: ProductionPartnerAppOptions) {
   const resolveConnection = options.resolveConnection
     ?? verifiedLeafConnectionResolver(options.persistence);
   return makePartnerApp({ ...options, resolveConnection });
-}
-
-export function makeProductionAppFromEnvironment() {
-  const tableName = requiredEnvironment('CSIP_DYNAMODB_TABLE');
-  const historyRetentionDays = positiveIntegerEnvironment('CSIP_HISTORY_RETENTION_DAYS', 30);
-  const client = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
-    marshallOptions: { removeUndefinedValues: true },
-  });
-  const persistence = new DynamoPartnerPersistence({ client, tableName });
-  return makeProductionPartnerApp({
-    persistence,
-    retention: { historySeconds: historyRetentionDays * 24 * 60 * 60 },
-  });
-}
-
-function requiredEnvironment(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required for the production partner server`);
-  return value;
-}
-
-function positiveIntegerEnvironment(name: string, fallback: number): number {
-  const raw = process.env[name]?.trim();
-  if (!raw) return fallback;
-  const value = Number(raw);
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new Error(`${name} must be a positive integer`);
-  }
-  return value;
 }

@@ -1,4 +1,5 @@
-import { flag, parseCommandArgs } from '../args.js';
+import { resolve as resolvePath } from 'node:path';
+import { flag, parseCommandArgs, stringOption } from '../args.js';
 import type { Command, CommandContext } from '../command.js';
 import { createDockerDriver } from '../demo/docker.js';
 import {
@@ -34,6 +35,7 @@ export function demoCommand(): Command {
         'Options:',
         '  --detach               Start in the background and return immediately',
         '  --verify               Prove dispatch moves telemetry, then tear down',
+        '  --mtls                 Run the production-shaped mutual-TLS rehearsal instead',
         '',
         'Without options the stack runs in the foreground; Ctrl-C stops and removes it.',
         `Docker's own exit status is returned unchanged.`,
@@ -42,6 +44,10 @@ export function demoCommand(): Command {
         `  Partner console: ${CONSOLE_URL}`,
         `  Swagger UI:      ${SWAGGER_URL}`,
         `  Client status:   ${CLIENT_STATUS_URL}`,
+        '',
+        'With --mtls the rehearsal stands up the production-shaped partner app behind a',
+        'Node TLS terminator, proves the four client-identity outcomes Fortress will meet,',
+        'and removes every generated key on exit. No Docker and no real certificates.',
         '',
         'Equivalent without the toolkit:',
         '  docker compose up --build',
@@ -52,16 +58,38 @@ export function demoCommand(): Command {
       const { values } = parseCommandArgs('demo', argv, {
         detach: { type: 'boolean' },
         verify: { type: 'boolean' },
+        mtls: { type: 'boolean' },
+        json: { type: 'boolean' },
+        out: { type: 'string' },
       });
 
       const detach = flag(values, 'detach');
       const verify = flag(values, 'verify');
+      const mtls = flag(values, 'mtls');
 
       if (detach && verify) {
         throw new UsageError(
           '--detach and --verify are mutually exclusive: verification tears the stack down',
           'demo',
         );
+      }
+
+      if (mtls && detach) {
+        throw new UsageError(
+          '--mtls runs a self-contained rehearsal and cannot be detached',
+          'demo',
+        );
+      }
+      if (mtls) {
+        // The rehearsal needs no Docker at all: it stands up the production-shaped partner
+        // app in this process behind a Node TLS terminator. Loaded on demand so that the
+        // express server it composes stays off the startup path of every other command.
+        const { runMtlsRehearsal } = await import('../mtls/rehearsal.js');
+        return runMtlsRehearsal(context, {
+          json: flag(values, 'json'),
+          out: stringOption(values, 'out', 'demo'),
+          resolvePath: (path) => resolvePath(context.io.cwd, path),
+        });
       }
 
       const docker = createDockerDriver(context.runProcess, context.repositoryRoot);
