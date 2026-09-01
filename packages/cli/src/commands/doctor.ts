@@ -117,7 +117,9 @@ export function doctorCommand(): Command {
         const certificateAuthorities =
           caPath === undefined ? undefined : [await readOrFail(context, absolute(caPath))];
 
-        const address = await firstAddress(context, parsed.hostname);
+        // The address the origin checks approved, not a fresh lookup. Re-resolving here
+        // would connect to whatever DNS says now, which is not what was validated.
+        const address = parsed.addresses[0];
         if (address === undefined) {
           for (const id of ['transport.server-certificate', 'transport.hostname', 'mtls.required',
             'transport.no-redirect', 'transport.response-bounds']) {
@@ -352,17 +354,6 @@ async function readOrFail(context: CommandContext, path: string): Promise<Uint8A
   }
 }
 
-async function firstAddress(
-  context: CommandContext,
-  hostname: string,
-): Promise<string | undefined> {
-  try {
-    const addresses = await context.resolveHost(hostname);
-    return addresses[0];
-  } catch {
-    return undefined;
-  }
-}
 
 /**
  * Fill in the redirect and byte-bound checks from the authenticated read.

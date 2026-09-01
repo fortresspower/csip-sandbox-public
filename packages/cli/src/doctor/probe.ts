@@ -12,14 +12,20 @@ import { DEFAULT_MAX_RESPONSE_BYTES } from '@fortress-csip/client-core';
  * requires attempting a connection that has no identity at all, so this probe exists.
  *
  * It is deliberately narrow. It performs one request, follows nothing, reads a bounded number
- * of bytes, gives up on a deadline, and pins the connection to an address the caller already
- * checked — so a DNS answer cannot change between the origin check and the request. It is used
- * only by doctor, and only for the anonymous case.
+ * of bytes, gives up on a deadline, and pins the connection to `address`.
+ *
+ * That address MUST be one the caller resolved and validated in a single step — the entries of
+ * `ParsedOrigin.addresses`, never a fresh lookup. Resolving again here, or in the caller, would
+ * reopen the gap this pinning exists to close: an authoritative server can answer differently
+ * on a second query, so the address connected to would not be the address approved.
  */
 
 export interface ProbeOptions {
   url: URL;
-  /** Address resolved and vetted by the origin checks. The probe will not resolve again. */
+  /**
+   * An address from `ParsedOrigin.addresses` — resolved and validated in one step by the
+   * origin checks. The probe performs no lookup of its own.
+   */
   address: string;
   /** Extra roots, permitted only in --local mode. */
   certificateAuthorities?: Uint8Array[];

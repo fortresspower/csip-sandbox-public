@@ -64,6 +64,16 @@ export interface ParsedOrigin {
   url: URL;
   hostname: string;
   port: number;
+  /**
+   * The addresses that were resolved AND validated, in resolution order.
+   *
+   * Callers must connect to one of these rather than resolving the hostname again. A second
+   * lookup can legitimately return a different answer, and an authoritative server under the
+   * control of whoever is being diagnosed can make it do so on purpose — so re-resolving
+   * would connect to an address these checks never approved. client-core's transport avoids
+   * the same trap by resolving once and pinning from that call.
+   */
+  addresses: string[];
 }
 
 /**
@@ -135,24 +145,25 @@ export async function checkOrigin(
     report.skip('origin.port-443', `local mode: TCP ${port} accepted`);
   }
 
-  await checkDns(url, mode, port, report, resolveHost);
-  return { url, hostname: url.hostname, port };
+  const addresses = await checkDns(url, mode, port, report, resolveHost);
+  return { url, hostname: url.hostname, port, addresses: addresses ?? [] };
 }
 
+/** Resolve once and validate every answer. Returns the approved addresses, or undefined. */
 async function checkDns(
   url: URL,
   mode: TargetMode,
   port: number,
   report: ReportBuilder,
   resolveHost: HostResolver,
-): Promise<void> {
+): Promise<string[] | undefined> {
   if (mode === 'deployed' && isIP(url.hostname) !== 0) {
     report.fail(
       'origin.public-dns',
       'the origin is an IP literal',
       'Use a public DNS hostname. The server certificate must validate for that name.',
     );
-    return;
+    return undefined;
   }
 
   let addresses: string[];
@@ -164,11 +175,11 @@ async function checkDns(
       `${url.hostname} did not resolve (${(error as { code?: string }).code ?? 'lookup failed'})`,
       'Publish a public DNS record for this name before a deployed connection is attempted.',
     );
-    return;
+    return undefined;
   }
   if (addresses.length === 0) {
     report.fail('origin.public-dns', `${url.hostname} resolved to no addresses`, 'Publish an A or AAAA record for this name.');
-    return;
+    return undefined;
   }
 
   if (mode === 'local') {
@@ -182,10 +193,10 @@ async function checkDns(
         `--local was requested but ${url.hostname} resolves outside loopback`,
         'Use localhost or 127.0.0.1 for a local rehearsal, or drop --local and test the deployed origin.',
       );
-      return;
+      return undefined;
     }
     report.pass('origin.public-dns', `${url.hostname} resolves to loopback (${addresses.length} address(es))`);
-    return;
+    return addresses;
   }
 
   const nonPublic = addresses.filter(isNonPublicAddress);
@@ -195,10 +206,11 @@ async function checkDns(
       `${url.hostname} resolves to a private or reserved address`,
       'A deployed endpoint must resolve to a public address. Fortress refuses private and reserved targets.',
     );
-    return;
+    return undefined;
   }
   report.pass(
     'origin.public-dns',
     `${url.hostname} resolves to ${addresses.length} public address(es) on TCP ${port}`,
   );
+  return addresses;
 }

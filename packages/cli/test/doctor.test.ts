@@ -7,8 +7,10 @@ import { runCli } from '../src/cli.js';
 import { createCommands } from '../src/commands/index.js';
 import { EXIT_CHECKS_FAILED, EXIT_OK, EXIT_USAGE } from '../src/errors.js';
 import { validateAgainstSchema } from '../src/report/validate.js';
+import { ReportBuilder } from '../src/report/report.js';
+import { checkOrigin } from '../src/doctor/origin.js';
 import type { CheckStatus, Report } from '../src/report/types.js';
-import { fixedHostResolver } from '../src/adapters/dns.js';
+import { changingHostResolver, fixedHostResolver } from '../src/adapters/dns.js';
 import { startCsipFixture, type FixtureOptions, type RunningFixture } from './support/csip-fixture.js';
 import { REPOSITORY_ROOT, testContext } from './support/context.js';
 
@@ -371,6 +373,51 @@ describe('mode rules', () => {
     expect(statusOf(report, 'origin.valid')).toBe('fail');
     // The password must not survive into the report, which a partner may forward.
     expect(JSON.stringify(report)).not.toContain('secret');
+  });
+
+  it('resolves once and hands back the addresses it validated', async () => {
+    // A validate-then-connect gap cannot be caught by a deterministic resolver, because both
+    // lookups agree. This one changes its answer, so re-resolving is observable.
+    const resolver = changingHostResolver([['93.184.216.34'], ['10.0.0.5']]);
+    const calls: string[] = [];
+    const counting = async (hostname: string) => {
+      calls.push(hostname);
+      return resolver(hostname);
+    };
+    const report = new ReportBuilder('doctor', {
+      origin: 'https://csip.partner.example',
+      deviceCapabilityPath: '/sep2/capability',
+      mode: 'deployed',
+    });
+    const parsed = await checkOrigin('https://csip.partner.example', 'deployed', report, counting);
+
+    expect(calls).toHaveLength(1);
+    expect(parsed?.addresses).toEqual(['93.184.216.34']);
+    // The private second answer must never appear in what the caller is told to connect to.
+    expect(parsed?.addresses).not.toContain('10.0.0.5');
+  });
+
+  it('connects to the validated address even when DNS changes its answer', async () => {
+    // End to end: the first answer is the loopback fixture and passes --local; the second is
+    // off-box. Re-resolving would send the probe somewhere the checks never approved, and the
+    // transport checks would not pass against the fixture.
+    const running = await fixture({
+      clientTrustRoots: [pki.root.certificate],
+      allowedLfdis: [lfdiOf(authorizedClient)],
+    });
+    const { context, io } = testContext({
+      resolveHost: changingHostResolver([['127.0.0.1'], ['203.0.113.99']]),
+      io: { cwd: '/w', readFile: async (path: string) => CLIENT_FILES()[path as keyof ReturnType<typeof CLIENT_FILES>] },
+    });
+    await runCli(
+      ['doctor', ...localArgs(running.origin), '--json'],
+      context,
+      createCommands(),
+    );
+    const report = JSON.parse(io.stdout.join('\n')) as Report;
+    expect(statusOf(report, 'origin.public-dns')).toBe('pass');
+    expect(statusOf(report, 'mtls.required')).toBe('pass');
+    expect(statusOf(report, 'transport.server-certificate')).toBe('pass');
   });
 
   it('requires --cert and --key together', async () => {
