@@ -1,6 +1,7 @@
 import { readFile, stat } from 'node:fs/promises';
+import { promises as dns } from 'node:dns';
 import { join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { runCli } from '../src/cli.js';
 import { createCommands } from '../src/commands/index.js';
 import { EXIT_OK, EXIT_USAGE } from '../src/errors.js';
@@ -40,6 +41,20 @@ describe('the four identity outcomes', () => {
     expect(report!.checks.map((check) => check.id)).toEqual([...MTLS_CHECK_IDS]);
     for (const check of report!.checks) expect(check.status).toBe('pass');
     expect(code).toBe(EXIT_OK);
+  }, 60_000);
+
+  it('does not depend on the system localhost address order', async () => {
+    const lookup = vi.spyOn(dns, 'lookup').mockResolvedValue([
+      { address: '::1', family: 6 },
+    ] as never);
+    try {
+      const { code, report } = await rehearse(['--json']);
+      expect(report!.checks.every((check) => check.status === 'pass')).toBe(true);
+      expect(code).toBe(EXIT_OK);
+      expect(lookup).not.toHaveBeenCalled();
+    } finally {
+      lookup.mockRestore();
+    }
   }, 60_000);
 
   it('serves a trusted, allowlisted identity', async () => {

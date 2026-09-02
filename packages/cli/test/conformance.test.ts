@@ -6,7 +6,11 @@ import { makePartnerApp } from '@fortress-csip/example-server/partner-app';
 import { MemoryPartnerPersistence } from '@fortress-csip/example-server/persistence/memory';
 import { directMtlsConnectionResolver } from '@fortress-csip/example-server/direct-mtls-auth';
 import { createServer as createHttpsServer, type Server } from 'node:https';
-import { fixedHostResolver } from '../src/adapters/dns.js';
+import {
+  changingHostResolver,
+  fixedHostResolver,
+  type HostResolver,
+} from '../src/adapters/dns.js';
 import { runCli } from '../src/cli.js';
 import { createCommands } from '../src/commands/index.js';
 import { syntheticDevices } from '../src/commands/conformance.js';
@@ -341,7 +345,7 @@ describe('remote mode', () => {
   });
 
   /** A real mTLS partner server, so remote mode is exercised over an actual connection. */
-  async function startPartner(): Promise<{ origin: string }> {
+  async function startPartner(hostname = 'localhost'): Promise<{ origin: string }> {
     const persistence = new MemoryPartnerPersistence();
     const { app, domain } = makePartnerApp({
       persistence,
@@ -351,10 +355,13 @@ describe('remote mode', () => {
     await domain.createConnection('remote', lfdi);
     await domain.createProgram('remote', 'rehearsal', 'rehearsal-dispatch', 3);
 
+    const certificate = hostname === 'localhost'
+      ? serverCertificate
+      : pki.root.issue(`remote-fixture-${hostname}`, 'server', hostname);
     const server = createHttpsServer(
       {
-        cert: Buffer.from(serverCertificate.certificate),
-        key: Buffer.from(serverCertificate.privateKey),
+        cert: Buffer.from(certificate.certificate),
+        key: Buffer.from(certificate.privateKey),
         requestCert: true,
         rejectUnauthorized: true,
         ca: [Buffer.from(pki.root.certificate)],
@@ -368,16 +375,17 @@ describe('remote mode', () => {
         resolve(typeof address === 'object' && address !== null ? address.port : 0);
       });
     });
-    return { origin: `https://localhost:${port}` };
+    return { origin: `https://${hostname}:${port}` };
   }
 
   async function remote(
     origin: string,
     extra: string[] = [],
+    resolveHost: HostResolver = fixedHostResolver({ localhost: ['127.0.0.1'] }),
   ): Promise<{ code: number; out: string; err: string; report: Report }> {
     const fs = memoryFiles();
     const { context, io } = testContext({
-      resolveHost: fixedHostResolver({ localhost: ['127.0.0.1'] }),
+      resolveHost,
       io: { cwd: '/w', readFile: async (path: string) => {
         const material: Record<string, Uint8Array> = {
           '/w/client.pem': client.certificate,
@@ -404,6 +412,19 @@ describe('remote mode', () => {
     expect(statusOf(report, 'enrollment.first-registration')).toBe('pass');
     expect(statusOf(report, 'enrollment.idempotent-registration')).toBe('pass');
     expect(statusOf(report, 'enrollment.two-distinct-devices')).toBe('pass');
+  }, 60_000);
+
+  it('pins authenticated requests to the address approved by the origin checks', async () => {
+    const hostname = 'pinned.partner.invalid';
+    const partner = await startPartner(hostname);
+    const { report } = await remote(
+      partner.origin,
+      [],
+      changingHostResolver([['127.0.0.1'], ['203.0.113.10']]),
+    );
+
+    expect(statusOf(report, 'enrollment.first-registration')).toBe('pass');
+    expect(statusOf(report, 'telemetry.standard-mup')).toBe('pass');
   }, 60_000);
 
   it('records the client identity in the evidence', async () => {

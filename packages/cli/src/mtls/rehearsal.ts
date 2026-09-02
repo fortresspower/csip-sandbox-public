@@ -261,6 +261,7 @@ async function attempt(
   const transport = createCsipTransport({
     baseUrl: origin,
     environment: 'local-test',
+    resolveDns: async () => ['127.0.0.1'],
     tls: {
       certificate: client.certificate,
       privateKey: client.privateKey,
