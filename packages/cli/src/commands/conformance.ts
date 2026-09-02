@@ -233,6 +233,11 @@ async function runRemote(
     context.io.err('The origin did not pass the transport checks; run `fortress-csip doctor` for detail.');
     return undefined;
   }
+  const address = parsed.addresses[0];
+  if (address === undefined) {
+    context.io.err('The origin resolved to no usable address; run `fortress-csip doctor` for detail.');
+    return undefined;
+  }
 
   const certificate = await read(context, absolute(certPath));
   const privateKey = await read(context, absolute(keyPath));
@@ -245,6 +250,7 @@ async function runRemote(
 
   const transport = createDoctorTransport({
     origin: parsed.url.origin,
+    address,
     deviceCapabilityPath: options.deviceCapabilityPath,
     mode,
     certificate,

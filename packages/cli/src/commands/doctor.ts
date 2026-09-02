@@ -125,6 +125,7 @@ export function doctorCommand(): Command {
             'transport.no-redirect', 'transport.response-bounds']) {
             report.skip(id, 'the origin did not resolve to an address to connect to');
           }
+          skipAuthenticatedChecks(report);
         } else {
           const probeUrl = new URL(deviceCapabilityPath, parsed.url.origin);
           await runTransportChecks(report, {
@@ -134,25 +135,26 @@ export function doctorCommand(): Command {
             mode,
             certificateAuthorities,
           });
-        }
 
-        if (certPath === undefined || keyPath === undefined) {
-          skipAuthenticatedChecks(report);
-        } else {
-          const identity = await runAuthenticatedChecks(context, report, {
-            origin: parsed.url.origin,
-            deviceCapabilityPath,
-            mode,
-            certPath: absolute(certPath),
-            keyPath: absolute(keyPath),
-            certificateAuthorities,
-          });
-          if (identity !== undefined) {
-            report.setIdentity({
-              aggregatorLfdi: identity.aggregatorLfdi,
-              certificateFingerprintSha256: identity.fingerprintSha256,
-              certificateNotAfter: identity.notAfter.toISOString(),
+          if (certPath === undefined || keyPath === undefined) {
+            skipAuthenticatedChecks(report);
+          } else {
+            const identity = await runAuthenticatedChecks(context, report, {
+              origin: parsed.url.origin,
+              address,
+              deviceCapabilityPath,
+              mode,
+              certPath: absolute(certPath),
+              keyPath: absolute(keyPath),
+              certificateAuthorities,
             });
+            if (identity !== undefined) {
+              report.setIdentity({
+                aggregatorLfdi: identity.aggregatorLfdi,
+                certificateFingerprintSha256: identity.fingerprintSha256,
+                certificateNotAfter: identity.notAfter.toISOString(),
+              });
+            }
           }
         }
       } else {
@@ -179,6 +181,7 @@ export function doctorCommand(): Command {
 
 interface AuthenticatedOptions {
   origin: string;
+  address: string;
   deviceCapabilityPath: string;
   mode: TargetMode;
   certPath: string;
@@ -253,6 +256,7 @@ async function runAuthenticatedChecks(
   try {
     transport = createDoctorTransport({
       origin: options.origin,
+      address: options.address,
       deviceCapabilityPath: options.deviceCapabilityPath,
       mode: options.mode,
       certificate,

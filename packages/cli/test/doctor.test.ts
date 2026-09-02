@@ -397,11 +397,14 @@ describe('mode rules', () => {
     expect(parsed?.addresses).not.toContain('10.0.0.5');
   });
 
-  it('connects to the validated address even when DNS changes its answer', async () => {
+  it('pins authenticated requests to the address validated by the origin checks', async () => {
     // End to end: the first answer is the loopback fixture and passes --local; the second is
-    // off-box. Re-resolving would send the probe somewhere the checks never approved, and the
-    // transport checks would not pass against the fixture.
+    // off-box. The hostname deliberately has no system-DNS answer: both the anonymous probe and
+    // authenticated transport must use the address that checkOrigin already approved.
+    const hostname = 'pinned.partner.invalid';
     const running = await fixture({
+      server: pki.root.issue('pinned-fixture-server', 'server', hostname),
+      hostname,
       clientTrustRoots: [pki.root.certificate],
       allowedLfdis: [lfdiOf(authorizedClient)],
     });
@@ -410,7 +413,7 @@ describe('mode rules', () => {
       io: { cwd: '/w', readFile: async (path: string) => CLIENT_FILES()[path as keyof ReturnType<typeof CLIENT_FILES>] },
     });
     await runCli(
-      ['doctor', ...localArgs(running.origin), '--json'],
+      ['doctor', ...authArgs(running.origin), '--json'],
       context,
       createCommands(),
     );
@@ -418,6 +421,7 @@ describe('mode rules', () => {
     expect(statusOf(report, 'origin.public-dns')).toBe('pass');
     expect(statusOf(report, 'mtls.required')).toBe('pass');
     expect(statusOf(report, 'transport.server-certificate')).toBe('pass');
+    expect(statusOf(report, 'client-certificate.authorized')).toBe('pass');
   });
 
   it('requires --cert and --key together', async () => {

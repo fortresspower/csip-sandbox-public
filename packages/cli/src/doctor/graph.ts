@@ -29,6 +29,8 @@ export const SEP2_NAMESPACE = 'urn:ieee:std:2030.5:ns';
 
 export interface GraphCheckOptions {
   origin: string;
+  /** Address already resolved and approved by the origin checks. */
+  address: string;
   deviceCapabilityPath: string;
   mode: TargetMode;
   certificate: Uint8Array;
@@ -47,6 +49,8 @@ export function createDoctorTransport(options: GraphCheckOptions): CsipTransport
         ? {}
         : { certificateAuthorities: options.certificateAuthorities }),
     },
+    // Do not reopen a validate-then-connect gap by resolving the hostname again here.
+    resolveDns: async () => [options.address],
   });
 }
 

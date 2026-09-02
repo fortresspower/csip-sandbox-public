@@ -16,6 +16,8 @@ const NS = 'urn:ieee:std:2030.5:ns';
 
 export interface FixtureOptions {
   server: TestCertificate;
+  /** Hostname advertised by the fixture; the listener itself remains pinned to IPv4 loopback. */
+  hostname?: string;
   /** Roots trusted for client certificates. Omit to accept anonymous clients. */
   clientTrustRoots?: Uint8Array[];
   /** LFDIs the application authorizes. A trusted client outside this list gets 403. */
@@ -115,7 +117,7 @@ export async function startCsipFixture(options: FixtureOptions): Promise<Running
 
   return {
     port,
-    origin: `${options.plainHttp ? 'http' : 'https'}://localhost:${port}`,
+    origin: `${options.plainHttp ? 'http' : 'https'}://${options.hostname ?? 'localhost'}:${port}`,
     requests,
     close: () =>
       new Promise<void>((resolve) => {
