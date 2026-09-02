@@ -20,11 +20,17 @@
     "release:verify": "node scripts/release-bundle.mjs --verify",
     "postinstall": "npm run build:cli"
   },
+  "dependencies": {
+    "qs": "6.16.0"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "esbuild": "^0.28.2",
     "tsx": "^4.19.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "qs": "$qs"
   }
 }
