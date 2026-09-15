@@ -89,6 +89,7 @@ describe('production-shaped partner loop', () => {
           dispatched.push(intent);
           return { status: 'accepted' as const };
         },
+        async reconcile() { return { status: 'accepted' as const }; },
         async updateLifecycle() {},
       },
     });

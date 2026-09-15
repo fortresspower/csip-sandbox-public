@@ -34,6 +34,7 @@ describe('CSIP session recovery', () => {
         if (fail) throw new Error('device plane unavailable');
         return { status: 'accepted' as const };
       },
+      async reconcile() { return { status: 'accepted' as const }; },
       async updateLifecycle(): Promise<void> {},
     };
 
@@ -87,6 +88,7 @@ describe('CSIP session recovery', () => {
           dispatched.push(intent.internalEventId);
           return { status: 'accepted' as const };
         },
+        async reconcile() { return { status: 'accepted' as const }; },
         async updateLifecycle() {},
       },
     });
@@ -105,6 +107,89 @@ describe('CSIP session recovery', () => {
     expect(dispatched).toHaveLength(2);
     expect(store.attempts).toBe(2);
     expect(transport.requests.filter((request) => request.method === 'POST')).toHaveLength(1);
+  });
+
+  it('posts receipt before an execution outcome queued during downstream admission', async () => {
+    const transport = new MemoryTransport();
+    transport.getBodies.set('/controls', () => controlXml({
+      mRID: 'event-response-order', fixedW: -500, responseRequired: '03', replyTo: '/responses',
+    }));
+    const store = new MemorySessionStore();
+    const resources = new ResourceClient({ transport, store });
+    let session!: CsipSession;
+    session = new CsipSession({
+      connectionId: 'partner-a',
+      resources,
+      store,
+      sink: {
+        async dispatch(intent) {
+          await session.recordOutcome(intent.internalEventId, 'started');
+          return { status: 'accepted' as const };
+        },
+        async reconcile() { return { status: 'accepted' as const }; },
+        async updateLifecycle() {},
+      },
+    });
+
+    transport.failNextPost = true;
+    expect(await session.runOnce(snapshot)).toMatchObject({ responses: { sent: 0, failed: 1 } });
+    expect(transport.requests.filter((request) => request.method === 'POST')).toHaveLength(1);
+
+    expect(await session.flushResponses()).toEqual({ sent: 2, failed: 0 });
+    expect(transport.requests.filter((request) => request.method === 'POST').map((request) =>
+      Number(request.body.match(/<status>(\d+)<\/status>/)?.[1])),
+    ).toEqual([1, 1, 2]);
+  });
+
+  it('withdraws a cancelled uncertain control when reconciliation proves it was never admitted', async () => {
+    let status = 0;
+    const transport = new MemoryTransport();
+    transport.getBodies.set('/controls', () => controlXml({
+      mRID: 'event-never-admitted',
+      fixedW: -500,
+      currentStatus: status,
+      responseRequired: '03',
+      replyTo: '/responses',
+    }));
+    const store = new MemorySessionStore();
+    let dispatches = 0;
+    let reconciliations = 0;
+    let lifecycleUpdates = 0;
+    const session = new CsipSession({
+      connectionId: 'partner-a',
+      resources: new ResourceClient({ transport, store }),
+      store,
+      now: () => 250,
+      sink: {
+        async dispatch() {
+          dispatches += 1;
+          throw new Error('crash before downstream admission');
+        },
+        async reconcile() {
+          reconciliations += 1;
+          return { status: 'not-admitted' as const };
+        },
+        async updateLifecycle() { lifecycleUpdates += 1; },
+      },
+    });
+
+    expect(await session.runOnce(snapshot)).toMatchObject({ failedDeliveries: 1 });
+    status = 2;
+    expect(await session.runOnce(snapshot)).toMatchObject({
+      delivered: [],
+      failedDeliveries: 0,
+      lifecycleUpdates: [],
+      responses: { sent: 1, failed: 0 },
+    });
+    expect({ dispatches, reconciliations, lifecycleUpdates }).toEqual({
+      dispatches: 1,
+      reconciliations: 1,
+      lifecycleUpdates: 0,
+    });
+    expect(await store.loadControl((await store.listControls())[0].internalEventId))
+      .toMatchObject({ admissionState: 'withdrawn', lastStatus: 2 });
+    expect(transport.requests.filter((request) => request.method === 'POST')[0].body)
+      .toContain('<status>6</status>');
   });
 
   it.each([
@@ -148,6 +233,10 @@ describe('CSIP session recovery', () => {
           sinkCalls.push(intent.internalEventId);
           actuated.add(intent.internalEventId);
           return { status: 'accepted' as const };
+        },
+        async reconcile(intent) {
+          sinkCalls.push(intent.internalEventId);
+          return { status: actuated.has(intent.internalEventId) ? 'accepted' as const : 'not-admitted' as const };
         },
         async updateLifecycle(update) { lifecycle.push(update.kind); },
       },
@@ -214,6 +303,11 @@ describe('CSIP session recovery', () => {
           actuated.add(intent.internalEventId);
           return { status: 'accepted' as const };
         },
+        async reconcile(intent) {
+          sinkCalls.push(intent.internalEventId);
+          if (reconciliationUnavailable) throw new Error('admission lookup unavailable');
+          return { status: actuated.has(intent.internalEventId) ? 'accepted' as const : 'not-admitted' as const };
+        },
         async updateLifecycle(update) { lifecycle.push(update.kind); },
       },
     });
@@ -260,6 +354,7 @@ describe('CSIP session recovery', () => {
           dispatches += 1;
           return { status: 'terminal-rejected' as const };
         },
+        async reconcile() { return { status: 'terminal-rejected' as const }; },
         async updateLifecycle() {},
       },
     });
@@ -292,6 +387,7 @@ describe('CSIP session recovery', () => {
           delivered.push(intent.internalEventId);
           return { status: 'accepted' as const };
         },
+        async reconcile() { return { status: 'accepted' as const }; },
         async updateLifecycle() {},
       },
     });
@@ -312,6 +408,7 @@ describe('CSIP session recovery', () => {
     let failLifecycle = true;
     const sink = {
       async dispatch() { return { status: 'accepted' as const }; },
+      async reconcile() { return { status: 'accepted' as const }; },
       async updateLifecycle(update: { internalEventId: string }): Promise<void> {
         lifecycleAttempts.push(update.internalEventId);
         if (failLifecycle) throw new Error('state machine unavailable');

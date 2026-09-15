@@ -21,12 +21,22 @@ export interface ControlSink {
    * an uncertain outcome, another call returns the same durable result without repeating actuation.
    */
   dispatch(intent: ControlIntent): Promise<ControlAdmissionResult>;
+  /**
+   * Resolve an earlier dispatch whose outcome is unknown without creating new downstream work.
+   * This is used when the partner has already withdrawn the control: an implementation must
+   * only inspect/reconcile durable admission state for intent.internalEventId.
+   */
+  reconcile(intent: ControlIntent): Promise<ControlReconciliationResult>;
   updateLifecycle(update: ControlLifecycleUpdate): Promise<void>;
 }
 
 export type ControlAdmissionResult =
   | { status: 'accepted' }
   | { status: 'terminal-rejected' };
+
+export type ControlReconciliationResult =
+  | ControlAdmissionResult
+  | { status: 'not-admitted' };
 
 export interface CsipSessionOptions {
   connectionId: string;
@@ -70,7 +80,23 @@ export class CsipSession {
           ? { ...stored, admissionState: 'uncertain' as const }
           : stored;
         if (attempted !== stored) await this.#store.saveControl(attempted);
-        const admission = await this.#sink.dispatch(stored.intent);
+        const terminal = terminalLifecycleEffect(attempted);
+        const admission = terminal
+          ? await this.#sink.reconcile(stored.intent)
+          : await this.#sink.dispatch(stored.intent);
+        if (admission.status === 'not-admitted') {
+          await this.#store.completeControlAdmission(
+            { ...attempted, admissionState: 'withdrawn' },
+            terminal
+              ? controlResponseEffects(
+                stored.intent,
+                terminal.update.kind === 'cancelled' ? 6 : 7,
+                this.#now(),
+              )
+              : [],
+          );
+          continue;
+        }
         const responseEffects = [
           ...controlResponseEffects(
             stored.intent,
@@ -78,13 +104,11 @@ export class CsipSession {
             this.#now(),
           ),
         ];
-        const terminal = admission.status === 'accepted'
-          ? terminalLifecycleEffect(attempted)
-          : undefined;
-        if (terminal) {
+        const acceptedTerminal = admission.status === 'accepted' ? terminal : undefined;
+        if (acceptedTerminal) {
           responseEffects.push(...controlResponseEffects(
             stored.intent,
-            terminal.update.kind === 'cancelled' ? 6 : 7,
+            acceptedTerminal.update.kind === 'cancelled' ? 6 : 7,
             this.#now(),
           ));
         }
@@ -94,7 +118,7 @@ export class CsipSession {
             admissionState: admission.status === 'accepted' ? 'accepted' : 'terminal-rejected',
           },
           responseEffects,
-          terminal ? [terminal] : [],
+          acceptedTerminal ? [acceptedTerminal] : [],
         );
         if (admission.status === 'accepted') delivered.push(stored.intent);
       } catch {

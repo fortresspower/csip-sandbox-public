@@ -145,18 +145,26 @@ export class LifecycleResponder {
   async flushResponses(): Promise<{ sent: number; failed: number }> {
     let sent = 0;
     let failed = 0;
-    for (const effect of await this.#store.listPendingResponses()) {
-      if (effect.response.status === 1) {
-        const control = await this.#store.loadControl(effect.internalEventId);
-        const state = control ? controlAdmissionState(control) : undefined;
-        if (state !== 'accepted') {
-          // A 0.3.x store may contain status 1 queued before dispatch. Keep an uncertain effect
-          // owed until reconciliation; quarantine it only once admission is terminally non-accepted.
-          if (state === 'terminal-rejected' || state === 'withdrawn') {
-            await this.#store.saveResponseEffect({ ...effect, sent: true });
-          }
-          continue;
-        }
+    const pending = await this.#store.listPendingResponses();
+    const controls = new Map<string, Awaited<ReturnType<SessionStore['loadControl']>>>();
+    for (const eventId of new Set(pending.map((effect) => effect.internalEventId))) {
+      controls.set(eventId, await this.#store.loadControl(eventId));
+    }
+    const blockedRoutes = new Set<string>();
+    pending.sort(compareResponseEffects);
+    for (const effect of pending) {
+      const route = `${effect.internalEventId}\0${effect.response.endDeviceLFDI}`;
+      if (blockedRoutes.has(route)) continue;
+      const control = controls.get(effect.internalEventId);
+      const state = control ? controlAdmissionState(control) : undefined;
+      const disposition = responseDisposition(effect.response.status, state);
+      if (disposition === 'hold') {
+        blockedRoutes.add(route);
+        continue;
+      }
+      if (disposition === 'discard') {
+        await this.#store.saveResponseEffect({ ...effect, sent: true });
+        continue;
       }
       try {
         await this.#resources.postControlResponse(effect.href, effect.response);
@@ -164,8 +172,38 @@ export class LifecycleResponder {
         sent += 1;
       } catch {
         failed += 1;
+        blockedRoutes.add(route);
       }
     }
     return { sent, failed };
   }
+}
+
+type ResponseDisposition = 'send' | 'hold' | 'discard';
+
+function responseDisposition(
+  status: CsipResponseStatus,
+  state: ReturnType<typeof controlAdmissionState> | undefined,
+): ResponseDisposition {
+  if (state === undefined || state === 'pending' || state === 'uncertain') return 'hold';
+  if (status === 252) return state === 'terminal-rejected' ? 'send' : 'discard';
+  if (status === 6 || status === 7) {
+    return state === 'accepted' || state === 'withdrawn' ? 'send' : 'discard';
+  }
+  return state === 'accepted' ? 'send' : 'discard';
+}
+
+function compareResponseEffects(left: StoredResponseEffect, right: StoredResponseEffect): number {
+  const leftRoute = `${left.internalEventId}\0${left.response.endDeviceLFDI}`;
+  const rightRoute = `${right.internalEventId}\0${right.response.endDeviceLFDI}`;
+  if (leftRoute !== rightRoute) return leftRoute.localeCompare(rightRoute);
+  const rank = (effect: StoredResponseEffect): number => {
+    if (effect.response.status === 1) return 0;
+    if (effect.response.status === 2) return 1;
+    return 2;
+  };
+  return rank(left) - rank(right)
+    || left.response.createdDateTime - right.response.createdDateTime
+    || left.response.status - right.response.status
+    || left.id.localeCompare(right.id);
 }

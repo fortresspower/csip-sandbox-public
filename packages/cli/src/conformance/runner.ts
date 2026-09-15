@@ -320,6 +320,7 @@ async function runControlPhase(
         dispatched.push(intent);
         return { status: 'accepted' as const };
       },
+      async reconcile() { return { status: 'accepted' as const }; },
       async updateLifecycle() {},
     },
   });
@@ -412,6 +413,7 @@ async function runResponsePhase(
     now: () => Math.floor(options.io.now().getTime() / 1000),
     sink: {
       async dispatch() { return { status: 'accepted' as const }; },
+      async reconcile() { return { status: 'accepted' as const }; },
       async updateLifecycle() {},
     },
   });
@@ -537,6 +539,7 @@ async function runRecoveryPhase(
         dispatched.push(deliveredIntent);
         return { status: 'accepted' as const };
       },
+      async reconcile() { return { status: 'accepted' as const }; },
       async updateLifecycle() {},
     },
   });

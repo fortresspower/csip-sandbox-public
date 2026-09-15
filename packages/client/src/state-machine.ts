@@ -58,6 +58,7 @@ export class CsipClient {
   constructor(private readonly o: CsipClientOpts) {
     const store = new MemorySessionStore();
     const resources = new ResourceClient({ transport: coreTransport(o.transport), store });
+    const admittedControls = new Set<string>();
     this.#assignments = {
       valid: true,
       devices: [{
@@ -76,10 +77,16 @@ export class CsipClient {
       now: () => this.now(),
       sink: {
         dispatch: async (intent) => {
-          const label = applyControl(o.generator, intentControl(intent));
-          o.onControlApplied?.(label);
+          if (!admittedControls.has(intent.internalEventId)) {
+            const label = applyControl(o.generator, intentControl(intent));
+            o.onControlApplied?.(label);
+            admittedControls.add(intent.internalEventId);
+          }
           return { status: 'accepted' as const };
         },
+        reconcile: async (intent) => ({
+          status: admittedControls.has(intent.internalEventId) ? 'accepted' as const : 'not-admitted' as const,
+        }),
         updateLifecycle: async (update) => {
           o.generator.setChargeSetpoint(0);
           o.onControlApplied?.(`${update.wireMrid}: ${update.kind}`);

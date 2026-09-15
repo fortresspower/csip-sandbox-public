@@ -68,6 +68,9 @@ describe('control lifecycle responses', () => {
       connectionId: 'partner-a', resources, store, now: () => 400,
     }).poll(snapshot)).intents;
     expect(await store.listPendingResponses()).toEqual([]);
+    const control = await store.loadControl(intent.internalEventId);
+    expect(control).toBeDefined();
+    await store.saveControl({ ...control!, admissionState: 'accepted' });
 
     const lifecycle = new LifecycleResponder({ resources, store, now: () => 500 });
     expect(await lifecycle.recordOutcome(intent.internalEventId, 'started')).toBe(2);
