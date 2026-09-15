@@ -33,12 +33,26 @@ export interface CachedResource {
   body: string;
 }
 
+export type ControlAdmissionState =
+  | 'pending'
+  | 'uncertain'
+  | 'accepted'
+  | 'terminal-rejected'
+  | 'withdrawn';
+
 export interface StoredControl {
   internalEventId: string;
   materialFingerprint: string;
   lastStatus: number;
   intent: ControlIntent;
-  intentDelivered: boolean;
+  admissionState: ControlAdmissionState;
+}
+
+/** Maps 0.3.x durable records to the conservative 0.4 admission model at read time. */
+export function controlAdmissionState(control: StoredControl): ControlAdmissionState {
+  if (control.admissionState) return control.admissionState;
+  const legacy = control as StoredControl & { intentDelivered?: boolean };
+  return legacy.intentDelivered ? 'accepted' : 'uncertain';
 }
 
 export interface StoredResponseEffect {
@@ -68,6 +82,12 @@ export interface SessionStore {
   saveAssignmentSnapshot(snapshot: AssignmentSnapshot): Promise<void>;
   loadControl(internalEventId: string): Promise<StoredControl | undefined>;
   saveControl(control: StoredControl): Promise<void>;
+  /** Atomically records terminal admission bookkeeping and its deterministic response effects. */
+  completeControlAdmission(
+    control: StoredControl,
+    responseEffects: readonly StoredResponseEffect[],
+    lifecycleEffects?: readonly StoredLifecycleEffect[],
+  ): Promise<void>;
   listControls(): Promise<StoredControl[]>;
   listPendingControls(): Promise<StoredControl[]>;
   loadResponseEffect(id: string): Promise<StoredResponseEffect | undefined>;
@@ -141,13 +161,30 @@ export class MemorySessionStore implements SessionStore {
     this.#controls.set(control.internalEventId, copy(control));
   }
 
+  async completeControlAdmission(
+    control: StoredControl,
+    responseEffects: readonly StoredResponseEffect[],
+    lifecycleEffects: readonly StoredLifecycleEffect[] = [],
+  ): Promise<void> {
+    this.#controls.set(control.internalEventId, copy(control));
+    for (const effect of responseEffects) {
+      if (!this.#responses.has(effect.id)) this.#responses.set(effect.id, copy(effect));
+    }
+    for (const effect of lifecycleEffects) {
+      if (!this.#lifecycle.has(effect.id)) this.#lifecycle.set(effect.id, copy(effect));
+    }
+  }
+
   async listControls(): Promise<StoredControl[]> {
     return [...this.#controls.values()].map(copy);
   }
 
   async listPendingControls(): Promise<StoredControl[]> {
     return [...this.#controls.values()]
-      .filter((control) => !control.intentDelivered)
+      .filter((control) => {
+        const state = controlAdmissionState(control);
+        return state === 'pending' || state === 'uncertain';
+      })
       .map(copy);
   }
 

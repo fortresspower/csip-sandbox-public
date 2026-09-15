@@ -79,7 +79,7 @@ Send the validated submission and the evidence artifact it names through the agr
 channel. That channel is a matter for the two organizations; this repository does not choose
 it for you.
 
-## Before commands are enabled
+## Before the first supervised command
 
 Enablement is staged, and the first stage executes nothing:
 
@@ -90,10 +90,16 @@ Enablement is staged, and the first stage executes nothing:
    artifact.
 3. **One bounded command rehearsal.** A single control, bounded in watts and duration, agreed
    in advance by both sides.
-4. **Broader enablement**, once the rehearsal is clean.
+4. **Return to telemetry-only.** The first pilot ends in viewer-scoped telemetry-only operation.
+   Repeated or broader commands require separate Fortress authorization and another agreed window;
+   one clean rehearsal is not standing command enablement.
 
 An assignment makes a control *discoverable*. It does not, by itself, grant Fortress
 permission to act on a site — those remain separate decisions.
+
+Fortress checks fresh command permission when each new event is admitted. Confirmed acceptance freezes
+that event's site and execution route; later permission loss blocks later events but does not cancel
+accepted work. Use an explicit cancellation or remove the assignment when accepted work must stop.
 
 ## After you are connected
 

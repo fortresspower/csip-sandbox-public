@@ -81,7 +81,8 @@ advertised interval rather than bursting at connection start.
 
 ## Rollback
 
-The rollback action for a connection is to **disable that connection**, not to deploy code.
+The rollback action for a connection is for Fortress to **operator-pause that connection**, not to
+deploy code.
 Assignment changes and site-scope changes likewise require no deployment on either side — an
 assignment change is visible to Fortress purely through discovery, which
 `assignment.move-retargets` proves.

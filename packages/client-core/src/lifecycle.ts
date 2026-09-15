@@ -1,6 +1,10 @@
 import { CsipDiscoveryError, ResourceClient } from './resource-client.js';
 import type { ControlIntent } from './controls.js';
-import type { SessionStore } from './session-store.js';
+import {
+  controlAdmissionState,
+  type SessionStore,
+  type StoredResponseEffect,
+} from './session-store.js';
 import type { CsipResponseStatus } from './wire-types.js';
 
 export type LifecycleOutcome =
@@ -43,7 +47,30 @@ export async function queueControlResponse(
   createdDateTime: number,
   endDeviceLfdi?: string,
 ): Promise<number> {
-  if (!responseRequested(intent.responseRequired, status)) return 0;
+  const effects = await pendingControlResponseEffects(
+    store,
+    intent,
+    status,
+    createdDateTime,
+    endDeviceLfdi,
+  );
+  if (effects.length === 0) return 0;
+  if (store.saveResponseEffects) {
+    await store.saveResponseEffects(effects);
+  } else {
+    for (const effect of effects) await store.saveResponseEffect(effect);
+  }
+  return effects.length;
+}
+
+/** Builds deterministic response effects without consulting or mutating durable state. */
+export function controlResponseEffects(
+  intent: ControlIntent,
+  status: CsipResponseStatus,
+  createdDateTime: number,
+  endDeviceLfdi?: string,
+): StoredResponseEffect[] {
+  if (!responseRequested(intent.responseRequired, status)) return [];
   if (!intent.replyTo) {
     throw new CsipDiscoveryError(`control ${intent.wireMrid} requests a response without replyTo`);
   }
@@ -54,26 +81,32 @@ export async function queueControlResponse(
   if (endDeviceLfdi !== undefined && recipients.length === 0) {
     throw new CsipDiscoveryError(`control ${intent.wireMrid} is not assigned to EndDevice ${endDeviceLfdi}`);
   }
-  const ids = recipients.map((lFDI) => `${intent.internalEventId}\0${lFDI}\0${status}`);
+  return recipients.map((lFDI) => ({
+    id: `${intent.internalEventId}\0${lFDI}\0${status}`,
+    internalEventId: intent.internalEventId,
+    href: replyTo,
+    response: { createdDateTime, endDeviceLFDI: lFDI, status, subject: intent.wireMrid },
+    sent: false,
+  }));
+}
+
+export async function pendingControlResponseEffects(
+  store: SessionStore,
+  intent: ControlIntent,
+  status: CsipResponseStatus,
+  createdDateTime: number,
+  endDeviceLfdi?: string,
+): Promise<StoredResponseEffect[]> {
+  const candidates = controlResponseEffects(intent, status, createdDateTime, endDeviceLfdi);
+  if (candidates.length === 0) return [];
+  const ids = candidates.map((effect) => effect.id);
   const existing = store.loadResponseEffects
     ? await store.loadResponseEffects(ids)
     : await Promise.all(ids.map((id) => store.loadResponseEffect(id)));
-  const effects = recipients.flatMap((lFDI, index) => {
+  return candidates.flatMap((effect, index) => {
     if (existing[index]) return [];
-    return [{
-      id: ids[index],
-      internalEventId: intent.internalEventId,
-      href: replyTo,
-      response: { createdDateTime, endDeviceLFDI: lFDI, status, subject: intent.wireMrid },
-      sent: false,
-    }];
+    return [effect];
   });
-  if (store.saveResponseEffects) {
-    await store.saveResponseEffects(effects);
-  } else {
-    for (const effect of effects) await store.saveResponseEffect(effect);
-  }
-  return effects.length;
 }
 
 export interface LifecycleResponderOptions {
@@ -113,6 +146,18 @@ export class LifecycleResponder {
     let sent = 0;
     let failed = 0;
     for (const effect of await this.#store.listPendingResponses()) {
+      if (effect.response.status === 1) {
+        const control = await this.#store.loadControl(effect.internalEventId);
+        const state = control ? controlAdmissionState(control) : undefined;
+        if (state !== 'accepted') {
+          // A 0.3.x store may contain status 1 queued before dispatch. Keep an uncertain effect
+          // owed until reconciliation; quarantine it only once admission is terminally non-accepted.
+          if (state === 'terminal-rejected' || state === 'withdrawn') {
+            await this.#store.saveResponseEffect({ ...effect, sent: true });
+          }
+          continue;
+        }
+      }
       try {
         await this.#resources.postControlResponse(effect.href, effect.response);
         await this.#store.saveResponseEffect({ ...effect, sent: true });

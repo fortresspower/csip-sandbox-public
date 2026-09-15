@@ -70,16 +70,21 @@ registers it in-band through the discovered EndDeviceList resource.
    deployed capacity evidence.
 6. The partner assigns one registered EndDevice to the agreed DERProgram. An assignment makes
    a control discoverable but does not grant Fortress permission to act on that site.
-7. The partner publishes one bounded rehearsal control. Fortress consumes it only for a site
-   with current command permission, rechecks permission immediately before dispatch, and posts
-   accepted, started, and terminal responses on the same connection.
+7. The partner publishes one bounded rehearsal control. Fortress obtains fresh command permission
+   when admitting that new event and posts accepted status only after confirmed durable enqueue.
+   Acceptance freezes the site, LFDI, gateway, strategy, lifecycle response route, and supervisor
+   generation. Later permission or scope loss blocks new events but does not cancel accepted work;
+   accepted work continues only
+   while that original generation is live. Only an explicit partner cancellation or authoritatively
+   observed assignment removal cancels it. mRID idempotency and collision protection are unchanged.
 8. Fortress and the partner record the active connection, operating contacts, certificate
    expiry, and rollback owner. Later assignment and site-scope changes require no deployment.
 
-Fortress makes no site contact when a fresh scope decision is unavailable. It dispatches no
-command if current command permission is absent, any device identity is ambiguous, a discovered
-link crosses the configured origin, TLS verification is bypassed, an assignment is empty or
-ineligible, or an owed response cannot be recovered after an outage.
+Fortress makes no new site contact when a fresh scope decision is unavailable and admits no new event
+when fresh command permission is absent. It also rejects a new event if any device identity is
+ambiguous, a discovered link crosses the configured origin, TLS verification is bypassed, an
+assignment is empty or ineligible, or an owed response cannot be recovered after an outage. Those
+admission rules do not retroactively reinterpret accepted work.
 
 ## Public and private surfaces
 

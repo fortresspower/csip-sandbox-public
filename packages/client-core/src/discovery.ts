@@ -1,10 +1,11 @@
 import { CsipDiscoveryError, ResourceClient, type EndDeviceFleetSnapshot } from './resource-client.js';
 import { isCanonicalLfdi } from './identity.js';
-import type {
-  AssignedProgram,
-  AssignmentSnapshot,
-  DeviceAssignment,
-  SessionStore,
+import {
+  controlAdmissionState,
+  type AssignedProgram,
+  type AssignmentSnapshot,
+  type DeviceAssignment,
+  type SessionStore,
 } from './session-store.js';
 import {
   DEFAULT_WORK_CONCURRENCY,
@@ -20,6 +21,8 @@ export interface AssignmentDiscoveryOptions {
   maxResources?: number;
   /** Maximum simultaneous nested resource reads. Hard-capped at eight. */
   concurrency?: number;
+  /** Clock used to decide whether an accepted control still needs assignment observation. */
+  now?: () => number;
 }
 
 export interface AssignmentReconcileOptions extends CsipWorkOptions {
@@ -33,11 +36,13 @@ export class AssignmentDiscovery {
   readonly #store: SessionStore;
   readonly #maxResources: number;
   readonly #concurrency: number;
+  readonly #now: () => number;
 
   constructor(options: AssignmentDiscoveryOptions) {
     this.#resources = options.resources;
     this.#store = options.store;
     this.#maxResources = options.maxResources ?? DEFAULT_MAX_ASSIGNMENT_RESOURCES;
+    this.#now = options.now ?? (() => Math.floor(Date.now() / 1_000));
     if (!Number.isSafeInteger(this.#maxResources) || this.#maxResources <= 0) {
       throw new CsipDiscoveryError('maxResources must be a positive safe integer');
     }
@@ -74,11 +79,22 @@ export class AssignmentDiscovery {
   ): Promise<AssignmentSnapshot> {
     throwIfAborted(options.signal);
     for (const lFDI of knownLFDIs) {
-      if (!isCanonicalLfdi(lFDI)) throw new CsipDiscoveryError(`eligible LFDI is invalid: ${lFDI}`);
+      if (!isCanonicalLfdi(lFDI)) throw new CsipDiscoveryError(`known registration LFDI is invalid: ${lFDI}`);
     }
     for (const lFDI of eligibleLFDIs) {
       if (!knownLFDIs.has(lFDI)) {
         throw new CsipDiscoveryError(`eligible LFDI is not a known registration: ${lFDI}`);
+      }
+    }
+    const assignmentReadLFDIs = new Set(eligibleLFDIs);
+    const now = this.#now();
+    for (const control of await this.#store.listControls()) {
+      const admissionState = controlAdmissionState(control);
+      const active = control.lastStatus === 0 || control.lastStatus === 1;
+      const end = control.intent.interval.start + control.intent.interval.duration;
+      if ((admissionState !== 'accepted' && admissionState !== 'uncertain') || !active || now >= end) continue;
+      for (const lFDI of control.intent.assignedLFDIs) {
+        if (knownLFDIs.has(lFDI)) assignmentReadLFDIs.add(lFDI);
       }
     }
     let resourceCount = 0;
@@ -133,7 +149,7 @@ export class AssignmentDiscovery {
       throwIfAborted(options.signal);
       if (device.href) this.#resources.canonicalHref(device.href);
       const programs: AssignedProgram[] = [];
-      if (eligibleLFDIs.has(device.lFDI) && device.FunctionSetAssignmentsListLink) {
+      if (assignmentReadLFDIs.has(device.lFDI) && device.FunctionSetAssignmentsListLink) {
         const assignments = await readAssignments(device.FunctionSetAssignmentsListLink);
         for (const assignment of assignments) {
           throwIfAborted(options.signal);

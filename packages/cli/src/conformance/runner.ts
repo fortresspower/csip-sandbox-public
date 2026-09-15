@@ -316,7 +316,10 @@ async function runControlPhase(
     store,
     now: () => Math.floor(options.io.now().getTime() / 1000),
     sink: {
-      async dispatch(intent) { dispatched.push(intent); },
+      async dispatch(intent) {
+        dispatched.push(intent);
+        return { status: 'accepted' as const };
+      },
       async updateLifecycle() {},
     },
   });
@@ -407,7 +410,10 @@ async function runResponsePhase(
     resources,
     store,
     now: () => Math.floor(options.io.now().getTime() / 1000),
-    sink: { async dispatch() {}, async updateLifecycle() {} },
+    sink: {
+      async dispatch() { return { status: 'accepted' as const }; },
+      async updateLifecycle() {},
+    },
   });
 
   // The accepted response is not recorded here: client-core queues and sends it as part of
@@ -527,7 +533,10 @@ async function runRecoveryPhase(
     store: restarted,
     now: () => Math.floor(options.io.now().getTime() / 1000),
     sink: {
-      async dispatch(deliveredIntent) { dispatched.push(deliveredIntent); },
+      async dispatch(deliveredIntent) {
+        dispatched.push(deliveredIntent);
+        return { status: 'accepted' as const };
+      },
       async updateLifecycle() {},
     },
   });

@@ -37,7 +37,14 @@ describe('control polling', () => {
     transport.getBodies.set('/feeds/beta', () => controlXml({
       mRID: 'event-beta', fixedW: -800, responseRequired: '00', pollRate: 41,
     }));
-    const store = new MemorySessionStore();
+    class CountingStore extends MemorySessionStore {
+      controlWrites = 0;
+      override async saveControl(control: Parameters<MemorySessionStore['saveControl']>[0]) {
+        this.controlWrites += 1;
+        await super.saveControl(control);
+      }
+    }
+    const store = new CountingStore();
     const resources = new ResourceClient({ transport, store });
     const poller = new ControlPoller({ connectionId: 'partner-a', resources, store, now: () => 1_000 });
 
@@ -56,9 +63,11 @@ describe('control polling', () => {
       wireMrid: 'event-beta', programMrid: 'beta', programPrimacy: 7, assignedLFDIs: [DEVICE_ALPHA, DEVICE_BETA],
     });
     expect(result.intents[0].internalEventId).not.toBe(result.intents[1].internalEventId);
-    expect((await store.listPendingResponses()).map((effect) => effect.response.status)).toEqual([1]);
+    expect(await store.listPendingResponses()).toEqual([]);
+    expect(store.controlWrites).toBe(2);
 
     expect((await poller.poll(snapshot)).intents).toEqual([]);
+    expect(store.controlWrites, 'an unchanged poll must not rewrite durable controls').toBe(2);
     const restarted = new ControlPoller({ connectionId: 'partner-a', resources, store, now: () => 1_001 });
     expect((await restarted.poll(snapshot)).intents).toEqual([]);
   });
@@ -79,18 +88,17 @@ describe('control polling', () => {
       now: () => 1_000,
     });
 
-    await poller.poll(snapshot);
+    const [pending] = (await poller.poll(snapshot)).intents;
     status = 2;
     const cancelled = await poller.poll(snapshot);
     expect(cancelled.intents).toEqual([]);
-    expect(cancelled.lifecycleUpdates).toEqual([
-      expect.objectContaining({ wireMrid: 'event-alpha', kind: 'cancelled', assignedLFDIs: [DEVICE_ALPHA] }),
-    ]);
-    expect((await store.listPendingResponses()).map((effect) => effect.response.status).sort()).toEqual([1, 6]);
+    expect(cancelled.lifecycleUpdates).toEqual([]);
+    expect((await store.listPendingResponses()).map((effect) => effect.response.status)).toEqual([6]);
+    expect(await store.loadControl(pending.internalEventId)).toMatchObject({ admissionState: 'withdrawn' });
 
     fixedW = -1300;
     await expect(poller.poll(snapshot)).rejects.toBeInstanceOf(ControlRevisionError);
-    expect(await store.loadControl(cancelled.lifecycleUpdates[0].internalEventId))
+    expect(await store.loadControl(pending.internalEventId))
       .toMatchObject({ materialFingerprint: expect.any(String), lastStatus: 2 });
   });
 
@@ -134,14 +142,10 @@ describe('control polling', () => {
     };
     const removed = await poller.poll(moved);
     expect(removed.intents).toEqual([]);
-    expect(removed.lifecycleUpdates).toEqual([
-      expect.objectContaining({
-        wireMrid: 'moving-control',
-        kind: 'cancelled',
-        assignedLFDIs: [DEVICE_ALPHA],
-      }),
-    ]);
-    expect((await store.listPendingResponses()).map((effect) => effect.response.status).sort()).toEqual([1, 6]);
+    expect(removed.lifecycleUpdates).toEqual([]);
+    expect((await store.listPendingResponses()).map((effect) => effect.response.status)).toEqual([6]);
+    expect(await store.loadControl(first.intents[0].internalEventId))
+      .toMatchObject({ admissionState: 'withdrawn' });
   });
 
   it('rejects reserved response flags and invalid event status before dispatch', async () => {

@@ -15,7 +15,10 @@ import { runCli } from '../src/cli.js';
 import { createCommands } from '../src/commands/index.js';
 import { syntheticDevices } from '../src/commands/conformance.js';
 import { describeInstruction } from '../src/conformance/drivers.js';
-import { SerializableSessionStore } from '../src/conformance/session-store.js';
+import {
+  SerializableSessionStore,
+  type LegacySerializedSession,
+} from '../src/conformance/session-store.js';
 import type { ConformanceSessionFile } from '../src/conformance/types.js';
 import { EXIT_CHECKS_FAILED, EXIT_OK, EXIT_USAGE } from '../src/errors.js';
 import { validateAgainstSchema } from '../src/report/validate.js';
@@ -243,6 +246,49 @@ describe('session persistence', () => {
 });
 
 describe('serializable session store', () => {
+  it('quarantines unproven legacy acceptance responses during the version-1 upgrade', async () => {
+    const lFDI = 'a'.repeat(40);
+    const legacy: LegacySerializedSession = {
+      version: 1,
+      devices: [],
+      controls: [{
+        internalEventId: 'legacy-pending',
+        materialFingerprint: 'legacy-fingerprint',
+        lastStatus: 1,
+        intentDelivered: false,
+        intent: {
+          family: 'csip',
+          connectionId: 'conformance',
+          internalEventId: 'legacy-pending',
+          wireMrid: 'legacy-control',
+          programMrid: 'program',
+          programPrimacy: 1,
+          assignedLFDIs: [lFDI],
+          replyTo: '/responses',
+          responseRequired: '03',
+          creationTime: 1,
+          eventStatus: 1,
+          interval: { start: 1, duration: 300 },
+          control: { opModFixedW: -500 },
+        },
+      }],
+      responses: [{
+        id: `legacy-pending\0${lFDI}\0${1}`,
+        internalEventId: 'legacy-pending',
+        href: '/responses',
+        response: { createdDateTime: 1, endDeviceLFDI: lFDI, status: 1, subject: 'legacy-control' },
+        sent: false,
+      }],
+      lifecycle: [],
+    };
+
+    const restored = SerializableSessionStore.from(legacy);
+
+    expect(await restored.listPendingControls()).toHaveLength(1);
+    expect(await restored.listPendingResponses()).toEqual([]);
+    expect(restored.serialize().version).toBe(2);
+  });
+
   it('round-trips the state a restart depends on', async () => {
     const store = new SerializableSessionStore();
     await store.saveEndDevice({ lFDI: 'a'.repeat(40), href: '/sep2/edev/opaque', eligible: true });

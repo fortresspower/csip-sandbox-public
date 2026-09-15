@@ -78,6 +78,7 @@ export class CsipClient {
         dispatch: async (intent) => {
           const label = applyControl(o.generator, intentControl(intent));
           o.onControlApplied?.(label);
+          return { status: 'accepted' as const };
         },
         updateLifecycle: async (update) => {
           o.generator.setChargeSetpoint(0);
