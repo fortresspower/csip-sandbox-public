@@ -11,7 +11,7 @@
     "build": "node build.mjs"
   },
   "devDependencies": {
-    "@fortress-csip/client-core": "0.4.0",
+    "@fortress-csip/client-core": "0.4.1",
     "@fortress-csip/example-server": "0.0.0",
     "@fortress-csip/protocol": "0.1.0"
   }
