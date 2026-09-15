@@ -68,6 +68,9 @@ describe('control lifecycle responses', () => {
       connectionId: 'partner-a', resources, store, now: () => 400,
     }).poll(snapshot)).intents;
     expect(await store.listPendingResponses()).toEqual([]);
+    const control = await store.loadControl(intent.internalEventId);
+    expect(control).toBeDefined();
+    await store.saveControl({ ...control!, admissionState: 'accepted' });
 
     const lifecycle = new LifecycleResponder({ resources, store, now: () => 500 });
     expect(await lifecycle.recordOutcome(intent.internalEventId, 'started')).toBe(2);
@@ -94,12 +97,20 @@ describe('control lifecycle responses', () => {
       valid: true,
       devices: [{ lFDI: DEVICE_ALPHA, programs: [{ mRID: 'p', primacy: 1, controlListHref: '/controls' }] }],
     };
-    const store = new MemorySessionStore();
+    class CountingStore extends MemorySessionStore {
+      responseWrites = 0;
+      override async saveResponseEffects(effects: readonly StoredResponseEffect[]) {
+        this.responseWrites += 1;
+        await super.saveResponseEffects(effects);
+      }
+    }
+    const store = new CountingStore();
     const resources = new ResourceClient({ transport, store });
     const [intent] = (await new ControlPoller({ connectionId: 'partner-a', resources, store }).poll(snapshot)).intents;
     const lifecycle = new LifecycleResponder({ resources, store });
     expect(await lifecycle.recordOutcome(intent.internalEventId, 'started')).toBe(0);
-    expect((await store.listPendingResponses()).map((effect) => effect.response.status)).toEqual([1]);
+    expect(store.responseWrites, 'an empty response set must not write durable state').toBe(0);
+    expect(await store.listPendingResponses()).toEqual([]);
   });
 
   it('can queue a site outcome for only the named assigned EndDevice', async () => {

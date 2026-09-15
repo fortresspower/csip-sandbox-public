@@ -1,6 +1,8 @@
 # Partner readiness evidence checklist
 
-Complete this checklist before Fortress enables command polling.
+Complete this checklist before the supervised command rehearsal. Passing it is not standing command
+enablement; the first pilot returns to telemetry-only afterward, and any later command requires
+separate authorization.
 
 Most of it is produced for you. Run:
 

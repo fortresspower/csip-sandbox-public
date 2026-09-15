@@ -1,11 +1,12 @@
-import type {
-  AssignmentSnapshot,
-  CachedResource,
-  SessionStore,
-  StoredControl,
-  StoredEndDevice,
-  StoredLifecycleEffect,
-  StoredResponseEffect,
+import {
+  controlAdmissionState,
+  type AssignmentSnapshot,
+  type CachedResource,
+  type SessionStore,
+  type StoredControl,
+  type StoredEndDevice,
+  type StoredLifecycleEffect,
+  type StoredResponseEffect,
 } from '@fortress-csip/client-core';
 
 /**
@@ -22,13 +23,23 @@ import type {
  * carrying server payloads. Dropping it only costs a re-fetch on resume.
  */
 
-export interface SerializedSession {
-  version: 1;
+interface SerializedSessionState {
   devices: StoredEndDevice[];
-  controls: StoredControl[];
   responses: StoredResponseEffect[];
   lifecycle: StoredLifecycleEffect[];
   snapshot?: AssignmentSnapshot;
+}
+
+export interface SerializedSession extends SerializedSessionState {
+  version: 2;
+  controls: StoredControl[];
+}
+
+type LegacyStoredControl = Omit<StoredControl, 'admissionState'> & { intentDelivered: boolean };
+
+export interface LegacySerializedSession extends SerializedSessionState {
+  version: 1;
+  controls: LegacyStoredControl[];
 }
 
 function copy<T>(value: T): T {
@@ -43,12 +54,42 @@ export class SerializableSessionStore implements SessionStore {
   readonly #lifecycle = new Map<string, StoredLifecycleEffect>();
   #snapshot?: AssignmentSnapshot;
 
-  static from(serialized: SerializedSession | undefined): SerializableSessionStore {
+  static from(
+    serialized: SerializedSession | LegacySerializedSession | undefined,
+  ): SerializableSessionStore {
     const store = new SerializableSessionStore();
     if (serialized === undefined) return store;
     for (const device of serialized.devices) store.#devices.set(device.lFDI, device);
-    for (const control of serialized.controls) store.#controls.set(control.internalEventId, control);
-    for (const response of serialized.responses) store.#responses.set(response.id, response);
+    if (serialized.version === 1) {
+      for (const control of serialized.controls) {
+        const current: StoredControl = {
+          internalEventId: control.internalEventId,
+          materialFingerprint: control.materialFingerprint,
+          lastStatus: control.lastStatus,
+          intent: control.intent,
+          admissionState: control.intentDelivered ? 'accepted' : 'uncertain',
+        };
+        store.#controls.set(current.internalEventId, current);
+      }
+    } else {
+      for (const control of serialized.controls) store.#controls.set(control.internalEventId, control);
+    }
+    const legacyPendingControls = new Set(
+      serialized.version === 1
+        ? serialized.controls
+          .filter((control) => !control.intentDelivered)
+          .map((control) => control.internalEventId)
+        : [],
+    );
+    for (const response of serialized.responses) {
+      // Version 1 queued status 1 before dispatch. A pending control therefore cannot prove
+      // acceptance, so discard that unsent effect and retry admission with the stable mRID.
+      const unprovenLegacyAcceptance = serialized.version === 1
+        && !response.sent
+        && response.response.status === 1
+        && legacyPendingControls.has(response.internalEventId);
+      if (!unprovenLegacyAcceptance) store.#responses.set(response.id, response);
+    }
     for (const effect of serialized.lifecycle) store.#lifecycle.set(effect.id, effect);
     store.#snapshot = serialized.snapshot;
     return store;
@@ -56,7 +97,7 @@ export class SerializableSessionStore implements SessionStore {
 
   serialize(): SerializedSession {
     return copy({
-      version: 1 as const,
+      version: 2 as const,
       devices: [...this.#devices.values()],
       controls: [...this.#controls.values()],
       responses: [...this.#responses.values()],
@@ -112,12 +153,29 @@ export class SerializableSessionStore implements SessionStore {
     this.#controls.set(control.internalEventId, copy(control));
   }
 
+  async completeControlAdmission(
+    control: StoredControl,
+    responseEffects: readonly StoredResponseEffect[],
+    lifecycleEffects: readonly StoredLifecycleEffect[] = [],
+  ): Promise<void> {
+    this.#controls.set(control.internalEventId, copy(control));
+    for (const effect of responseEffects) {
+      if (!this.#responses.has(effect.id)) this.#responses.set(effect.id, copy(effect));
+    }
+    for (const effect of lifecycleEffects) {
+      if (!this.#lifecycle.has(effect.id)) this.#lifecycle.set(effect.id, copy(effect));
+    }
+  }
+
   async listControls(): Promise<StoredControl[]> {
     return [...this.#controls.values()].map(copy);
   }
 
   async listPendingControls(): Promise<StoredControl[]> {
-    return [...this.#controls.values()].filter((control) => !control.intentDelivered).map(copy);
+    return [...this.#controls.values()].filter((control) => {
+      const state = controlAdmissionState(control);
+      return state === 'pending' || state === 'uncertain';
+    }).map(copy);
   }
 
   async loadResponseEffect(id: string): Promise<StoredResponseEffect | undefined> {

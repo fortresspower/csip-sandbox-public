@@ -1,6 +1,10 @@
 import { CsipDiscoveryError, ResourceClient } from './resource-client.js';
 import type { ControlIntent } from './controls.js';
-import type { SessionStore } from './session-store.js';
+import {
+  controlAdmissionState,
+  type SessionStore,
+  type StoredResponseEffect,
+} from './session-store.js';
 import type { CsipResponseStatus } from './wire-types.js';
 
 export type LifecycleOutcome =
@@ -43,7 +47,30 @@ export async function queueControlResponse(
   createdDateTime: number,
   endDeviceLfdi?: string,
 ): Promise<number> {
-  if (!responseRequested(intent.responseRequired, status)) return 0;
+  const effects = await pendingControlResponseEffects(
+    store,
+    intent,
+    status,
+    createdDateTime,
+    endDeviceLfdi,
+  );
+  if (effects.length === 0) return 0;
+  if (store.saveResponseEffects) {
+    await store.saveResponseEffects(effects);
+  } else {
+    for (const effect of effects) await store.saveResponseEffect(effect);
+  }
+  return effects.length;
+}
+
+/** Builds deterministic response effects without consulting or mutating durable state. */
+export function controlResponseEffects(
+  intent: ControlIntent,
+  status: CsipResponseStatus,
+  createdDateTime: number,
+  endDeviceLfdi?: string,
+): StoredResponseEffect[] {
+  if (!responseRequested(intent.responseRequired, status)) return [];
   if (!intent.replyTo) {
     throw new CsipDiscoveryError(`control ${intent.wireMrid} requests a response without replyTo`);
   }
@@ -54,26 +81,32 @@ export async function queueControlResponse(
   if (endDeviceLfdi !== undefined && recipients.length === 0) {
     throw new CsipDiscoveryError(`control ${intent.wireMrid} is not assigned to EndDevice ${endDeviceLfdi}`);
   }
-  const ids = recipients.map((lFDI) => `${intent.internalEventId}\0${lFDI}\0${status}`);
+  return recipients.map((lFDI) => ({
+    id: `${intent.internalEventId}\0${lFDI}\0${status}`,
+    internalEventId: intent.internalEventId,
+    href: replyTo,
+    response: { createdDateTime, endDeviceLFDI: lFDI, status, subject: intent.wireMrid },
+    sent: false,
+  }));
+}
+
+export async function pendingControlResponseEffects(
+  store: SessionStore,
+  intent: ControlIntent,
+  status: CsipResponseStatus,
+  createdDateTime: number,
+  endDeviceLfdi?: string,
+): Promise<StoredResponseEffect[]> {
+  const candidates = controlResponseEffects(intent, status, createdDateTime, endDeviceLfdi);
+  if (candidates.length === 0) return [];
+  const ids = candidates.map((effect) => effect.id);
   const existing = store.loadResponseEffects
     ? await store.loadResponseEffects(ids)
     : await Promise.all(ids.map((id) => store.loadResponseEffect(id)));
-  const effects = recipients.flatMap((lFDI, index) => {
+  return candidates.flatMap((effect, index) => {
     if (existing[index]) return [];
-    return [{
-      id: ids[index],
-      internalEventId: intent.internalEventId,
-      href: replyTo,
-      response: { createdDateTime, endDeviceLFDI: lFDI, status, subject: intent.wireMrid },
-      sent: false,
-    }];
+    return [effect];
   });
-  if (store.saveResponseEffects) {
-    await store.saveResponseEffects(effects);
-  } else {
-    for (const effect of effects) await store.saveResponseEffect(effect);
-  }
-  return effects.length;
 }
 
 export interface LifecycleResponderOptions {
@@ -112,15 +145,65 @@ export class LifecycleResponder {
   async flushResponses(): Promise<{ sent: number; failed: number }> {
     let sent = 0;
     let failed = 0;
-    for (const effect of await this.#store.listPendingResponses()) {
+    const pending = await this.#store.listPendingResponses();
+    const controls = new Map<string, Awaited<ReturnType<SessionStore['loadControl']>>>();
+    for (const eventId of new Set(pending.map((effect) => effect.internalEventId))) {
+      controls.set(eventId, await this.#store.loadControl(eventId));
+    }
+    const blockedRoutes = new Set<string>();
+    pending.sort(compareResponseEffects);
+    for (const effect of pending) {
+      const route = `${effect.internalEventId}\0${effect.response.endDeviceLFDI}`;
+      if (blockedRoutes.has(route)) continue;
+      const control = controls.get(effect.internalEventId);
+      const state = control ? controlAdmissionState(control) : undefined;
+      const disposition = responseDisposition(effect.response.status, state);
+      if (disposition === 'hold') {
+        blockedRoutes.add(route);
+        continue;
+      }
+      if (disposition === 'discard') {
+        await this.#store.saveResponseEffect({ ...effect, sent: true });
+        continue;
+      }
       try {
         await this.#resources.postControlResponse(effect.href, effect.response);
         await this.#store.saveResponseEffect({ ...effect, sent: true });
         sent += 1;
       } catch {
         failed += 1;
+        blockedRoutes.add(route);
       }
     }
     return { sent, failed };
   }
+}
+
+type ResponseDisposition = 'send' | 'hold' | 'discard';
+
+function responseDisposition(
+  status: CsipResponseStatus,
+  state: ReturnType<typeof controlAdmissionState> | undefined,
+): ResponseDisposition {
+  if (state === undefined || state === 'pending' || state === 'uncertain') return 'hold';
+  if (status === 252) return state === 'terminal-rejected' ? 'send' : 'discard';
+  if (status === 6 || status === 7) {
+    return state === 'accepted' || state === 'withdrawn' ? 'send' : 'discard';
+  }
+  return state === 'accepted' ? 'send' : 'discard';
+}
+
+function compareResponseEffects(left: StoredResponseEffect, right: StoredResponseEffect): number {
+  const leftRoute = `${left.internalEventId}\0${left.response.endDeviceLFDI}`;
+  const rightRoute = `${right.internalEventId}\0${right.response.endDeviceLFDI}`;
+  if (leftRoute !== rightRoute) return leftRoute.localeCompare(rightRoute);
+  const rank = (effect: StoredResponseEffect): number => {
+    if (effect.response.status === 1) return 0;
+    if (effect.response.status === 2) return 1;
+    return 2;
+  };
+  return rank(left) - rank(right)
+    || left.response.createdDateTime - right.response.createdDateTime
+    || left.response.status - right.response.status
+    || left.id.localeCompare(right.id);
 }

@@ -85,7 +85,11 @@ describe('production-shaped partner loop', () => {
       store: sessionStore,
       now: () => clock,
       sink: {
-        async dispatch(intent) { dispatched.push(intent); },
+        async dispatch(intent) {
+          dispatched.push(intent);
+          return { status: 'accepted' as const };
+        },
+        async reconcile() { return { status: 'accepted' as const }; },
         async updateLifecycle() {},
       },
     });

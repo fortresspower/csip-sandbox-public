@@ -178,7 +178,7 @@ describe('assignment discovery', () => {
     expect(snapshot.devices.map((device) => device.lFDI)).toEqual([DEVICE_ALPHA]);
   });
 
-  it('keeps known registrations visible while excluding execution-ineligible assignments', async () => {
+  it('keeps registrations visible while limiting assignment reads to command-eligible sites', async () => {
     const state: GraphState = {
       assignments: { 'device-alpha': 'alpha', 'device-beta': 'beta' },
       etag: 1,
@@ -202,6 +202,52 @@ describe('assignment discovery', () => {
     expect(snapshot.devices.map((device) => device.lFDI)).toEqual([DEVICE_ALPHA, DEVICE_BETA]);
     expect(assignments(snapshot, DEVICE_ALPHA)).toEqual(['alpha']);
     expect(assignments(snapshot, DEVICE_BETA)).toEqual([]);
+  });
+
+  it('continues assignment reads for an accepted active control after eligibility is revoked', async () => {
+    const state: GraphState = {
+      assignments: { 'device-alpha': 'alpha', 'device-beta': 'beta' },
+      etag: 1,
+      sawConditionalGet: false,
+    };
+    let fixture!: RunningFixture;
+    fixture = await startFixture((request, response) => graphHandler(fixture.prefix, state)(request, response));
+    fixtures.push(fixture);
+    const store = new MemorySessionStore();
+    await store.saveControl({
+      internalEventId: 'accepted-beta',
+      materialFingerprint: 'accepted-beta-fingerprint',
+      lastStatus: 1,
+      admissionState: 'accepted',
+      intent: {
+        family: 'csip',
+        connectionId: 'partner-a',
+        internalEventId: 'accepted-beta',
+        wireMrid: 'accepted-beta',
+        programMrid: 'beta',
+        programPrimacy: 7,
+        assignedLFDIs: [DEVICE_BETA],
+        responseRequired: '00',
+        creationTime: 1,
+        eventStatus: 1,
+        interval: { start: 1, duration: 1_000 },
+        control: { opModFixedW: -500 },
+      },
+    });
+    const discovery = new AssignmentDiscovery({
+      resources: new ResourceClient({ transport: fixture.transport, store }),
+      store,
+      now: () => 100,
+    });
+
+    const snapshot = await discovery.reconcile(
+      `${fixture.prefix}/capability`,
+      new Set([DEVICE_ALPHA, DEVICE_BETA]),
+      new Set([DEVICE_ALPHA]),
+    );
+
+    expect(assignments(snapshot, DEVICE_ALPHA)).toEqual(['alpha']);
+    expect(assignments(snapshot, DEVICE_BETA)).toEqual(['beta']);
   });
 
   it('bounds nested reads and deduplicates identical assignment hrefs', async () => {

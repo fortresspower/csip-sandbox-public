@@ -1,8 +1,13 @@
 import { createHash } from 'node:crypto';
-import { queueControlResponse } from './lifecycle.js';
+import { controlResponseEffects } from './lifecycle.js';
 import { isCanonicalLfdi } from './identity.js';
 import { CsipDiscoveryError, ResourceClient } from './resource-client.js';
-import type { AssignmentSnapshot, SessionStore, StoredControl } from './session-store.js';
+import {
+  controlAdmissionState,
+  type AssignmentSnapshot,
+  type SessionStore,
+  type StoredControl,
+} from './session-store.js';
 import type { CsipDerControl, CsipDerControlBase } from './wire-types.js';
 
 export interface ControlIntent {
@@ -157,19 +162,17 @@ export class ControlPoller {
           if (existing.materialFingerprint !== fingerprint) throw new ControlRevisionError(control.mRID);
           const update = this.#statusUpdate(existing, control.EventStatus.currentStatus);
           if (update) {
-            lifecycleUpdates.push(update);
-            const effectId = `${update.internalEventId}\0${control.EventStatus.currentStatus}`;
-            if (!(await this.#store.loadLifecycleEffect(effectId))) {
-              await this.#store.saveLifecycleEffect({ id: effectId, update, sent: false });
-            }
-            await queueControlResponse(
-              this.#store,
-              existing.intent,
-              update.kind === 'cancelled' ? 6 : 7,
-              this.#now(),
+            const shouldDeliver = await this.#settleTerminalUpdate(
+              existing,
+              control.EventStatus.currentStatus,
+              update,
+              `${update.internalEventId}\0${control.EventStatus.currentStatus}`,
             );
+            if (shouldDeliver) lifecycleUpdates.push(update);
+          } else if (existing.lastStatus !== control.EventStatus.currentStatus
+            && !isTerminalStatus(existing.lastStatus)) {
+            await this.#store.saveControl({ ...existing, lastStatus: control.EventStatus.currentStatus });
           }
-          await this.#store.saveControl({ ...existing, lastStatus: control.EventStatus.currentStatus });
           continue;
         }
 
@@ -189,13 +192,12 @@ export class ControlPoller {
           control: { ...control.DERControlBase },
         };
         const dispatchable = control.EventStatus.currentStatus === 0 || control.EventStatus.currentStatus === 1;
-        if (dispatchable) await queueControlResponse(this.#store, intent, 1, this.#now());
         const stored: StoredControl = {
           internalEventId: eventId,
           materialFingerprint: fingerprint,
           lastStatus: control.EventStatus.currentStatus,
           intent,
-          intentDelivered: !dispatchable,
+          admissionState: dispatchable ? 'pending' : 'withdrawn',
         };
         await this.#store.saveControl(stored);
         if (dispatchable) intents.push(intent);
@@ -212,13 +214,13 @@ export class ControlPoller {
         assignedLFDIs: [...existing.intent.assignedLFDIs],
         kind: 'cancelled',
       };
-      lifecycleUpdates.push(update);
-      const effectId = `${update.internalEventId}\0assignment-removed`;
-      if (!(await this.#store.loadLifecycleEffect(effectId))) {
-        await this.#store.saveLifecycleEffect({ id: effectId, update, sent: false });
-      }
-      await queueControlResponse(this.#store, existing.intent, 6, this.#now());
-      await this.#store.saveControl({ ...existing, lastStatus: 2 });
+      const shouldDeliver = await this.#settleTerminalUpdate(
+        existing,
+        2,
+        update,
+        `${update.internalEventId}\0assignment-removed`,
+      );
+      if (shouldDeliver) lifecycleUpdates.push(update);
     }
     return { intents, lifecycleUpdates, pollRates };
   }
@@ -247,4 +249,48 @@ export class ControlPoller {
       kind,
     };
   }
+
+  async #settleTerminalUpdate(
+    existing: StoredControl,
+    status: number,
+    update: ControlLifecycleUpdate,
+    lifecycleEffectId: string,
+  ): Promise<boolean> {
+    const admissionState = controlAdmissionState(existing);
+    if (admissionState === 'uncertain') {
+      // The sink may already have accepted this control. Preserve it as pending so dispatch can
+      // reconcile the stable internalEventId before cancellation is allowed to settle the record.
+      await this.#store.saveControl({ ...existing, lastStatus: status });
+      return false;
+    }
+    if (admissionState === 'pending') {
+      await this.#store.completeControlAdmission(
+        { ...existing, lastStatus: status, admissionState: 'withdrawn' },
+        controlResponseEffects(
+          existing.intent,
+          update.kind === 'cancelled' ? 6 : 7,
+          this.#now(),
+        ),
+      );
+      return false;
+    }
+    if (admissionState !== 'accepted') {
+      await this.#store.saveControl({ ...existing, lastStatus: status });
+      return false;
+    }
+    await this.#store.completeControlAdmission(
+      { ...existing, lastStatus: status },
+      controlResponseEffects(
+        existing.intent,
+        update.kind === 'cancelled' ? 6 : 7,
+        this.#now(),
+      ),
+      [{ id: lifecycleEffectId, update, sent: false }],
+    );
+    return true;
+  }
+}
+
+function isTerminalStatus(status: number): boolean {
+  return status === 2 || status === 3 || status === 4;
 }
