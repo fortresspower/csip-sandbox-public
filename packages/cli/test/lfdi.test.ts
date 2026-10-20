@@ -1,3 +1,4 @@
+import { X509Certificate } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { aggregatorLfdiFromCertificate } from '@fortress-csip/client-core';
 import { makeTestPki, type TestPki } from '../../client-core/test/test-certificates.js';
@@ -33,9 +34,18 @@ function fileSystem(files: Record<string, Uint8Array>) {
 async function lfdi(
   argv: string[],
   files: Record<string, Uint8Array> = { '/w/client.pem': clientCertificate },
+  daysBeforeExpiry = 2,
 ): Promise<{ code: number; out: string; err: string }> {
   const { context, io } = testContext({
-    io: { cwd: '/w', readFile: fileSystem(files) },
+    io: {
+      cwd: '/w',
+      readFile: fileSystem(files),
+      // Anchor the existing clock seam to the generated certificate, not a calendar date.
+      now: () => new Date(
+        Date.parse(new X509Certificate(clientCertificate).validTo)
+          - daysBeforeExpiry * 86_400_000,
+      ),
+    },
   });
   const code = await runCli(['lfdi', ...argv], context, createCommands());
   return { code, out: io.stdout.join('\n'), err: io.stderr.join('\n') };
@@ -108,8 +118,24 @@ describe('lfdi', () => {
   });
 
   it('warns when the certificate is close to expiry', async () => {
-    // The test PKI issues two-day certificates, so this is always within the warning window.
     const { out } = await lfdi(['/w/client.pem']);
-    expect(out).toContain('Plan a rotation.');
+    expect(out).toContain('This certificate expires in 2 day(s). Plan a rotation.');
+  });
+
+  it('warns at the 30-day boundary', async () => {
+    const { out } = await lfdi(['/w/client.pem'], undefined, 30);
+    expect(out).toContain('This certificate expires in 30 day(s). Plan a rotation.');
+  });
+
+  it('does not warn outside the warning window', async () => {
+    const { out } = await lfdi(['/w/client.pem'], undefined, 31);
+    expect(out).not.toContain('Plan a rotation.');
+    expect(out).not.toContain('expired');
+  });
+
+  it('reports an expired certificate', async () => {
+    const { out } = await lfdi(['/w/client.pem'], undefined, -1);
+    expect(out).toContain('This certificate expired 1 day(s) ago.');
+    expect(out).not.toContain('Plan a rotation.');
   });
 });
