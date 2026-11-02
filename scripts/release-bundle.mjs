@@ -356,11 +356,14 @@ export async function smokeInstallRelease(outputDir = DEFAULT_OUTPUT) {
     ].join('\n');
     await execFile(process.execPath, ['--eval', requireSmoke], { cwd: temporary });
     await writeFile(join(temporary, 'consumer.ts'), [
-      `import { deviceLfdi, type CsipDerControlBase, type CsipTlsMaterial } from '${modulePath}';`,
+      `import { deviceLfdi, type CsipDerControlBase, type CsipTlsMaterial, type CsipConnectionServerTrust, type CsipTransportOptions } from '${modulePath}';`,
       `const control: CsipDerControlBase = { opModFixedW: -500 };`,
       `const tls: CsipTlsMaterial = { certificate: new Uint8Array([1]), privateKey: new Uint8Array([1]) };`,
       `const value: string = deviceLfdi('partner', 'site');`,
-      `void control; void tls; void value;`,
+      `const serverTrust: CsipConnectionServerTrust = { origin: 'https://partner.example', kind: 'connection-ca' };`,
+      `const options: CsipTransportOptions = { baseUrl: serverTrust.origin, environment: 'deployed', serverTrust,`,
+      `  tls: { ...tls, certificateAuthorities: [new Uint8Array([1])] } };`,
+      `void control; void tls; void value; void options;`,
       '',
     ].join('\n'));
     await writeFile(join(temporary, 'tsconfig.json'), stableJson({
@@ -375,10 +378,11 @@ export async function smokeInstallRelease(outputDir = DEFAULT_OUTPUT) {
     }));
     await execFile(join(ROOT, 'node_modules/.bin/tsc'), ['--project', 'tsconfig.json'], { cwd: temporary });
     await writeFile(join(temporary, 'consumer-cjs.ts'), [
-      `import { deviceLfdi, type CsipDerControlBase } from '${modulePath}';`,
+      `import { deviceLfdi, type CsipDerControlBase, type CsipConnectionServerTrust } from '${modulePath}';`,
       `const control: CsipDerControlBase = { opModFixedW: -500 };`,
       `const value: string = deviceLfdi('partner', 'site');`,
-      `void control; void value;`,
+      `const serverTrust: CsipConnectionServerTrust = { origin: 'https://partner.example', kind: 'connection-ca' };`,
+      `void control; void value; void serverTrust;`,
       '',
     ].join('\n'));
     await writeFile(join(temporary, 'tsconfig-cjs.json'), stableJson({

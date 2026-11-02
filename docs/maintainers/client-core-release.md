@@ -12,7 +12,7 @@ particular consumer installs the resulting artifact is that consumer's own conce
 
 The bundle contains exactly three output files under the ignored `release/` directory:
 
-- `fortress-csip-client-core-<version>.tgz` — the installable ESM package;
+- `fortress-csip-client-core-<version>.tgz` — the installable ESM and CommonJS package;
 - `manifest.json` — source commit, core and protocol versions, protocol input hashes,
   bundled third-party package names, package file inventory, and tarball SHA-256; and
 - `SHA256SUMS` — the standard checksum line for the tarball.
@@ -25,7 +25,7 @@ serializers, constants, workspace paths, or `src` files. Public declarations use
 client-core-owned `Csip*` types.
 
 The generated package has no runtime registry dependencies. Its smoke test installs with an
-empty npm cache and `--offline`, imports the ESM API, derives a device LFDI, rejects leaked
+empty npm cache and `--offline`, imports the ESM and CommonJS APIs, derives a device LFDI, rejects leaked
 protocol exports, and typechecks an empty TypeScript consumer, including deployed TLS material
 with a client certificate chain and private key but no custom server CA.
 
@@ -74,3 +74,16 @@ registry token.
 When the public client-core contract changes, increment the semantic version before
 building. Any protocol-runtime change also increments the pinned protocol version and is
 visible in the manifest even when the client-core API is unchanged.
+
+## 0.4.2 release note
+
+Adds optional connection-scoped private server trust through `CsipConnectionServerTrust`
+and `CsipTransportOptions.serverTrust`. Explicit policies require a canonical matching HTTPS
+origin and non-empty CA bytes, preventing private trust from leaking to another origin or
+silently falling back to system roots. Default server trust and all network restrictions
+remain unchanged.
+
+After merging the versioned source, run `npm ci` and `npm run release:bundle` from the clean
+merged commit, then `npm run release:verify`. Run `npm run test:client-core-scale` to record
+the scale report alongside the generated tarball, manifest and checksums. Distribute those
+artifacts with the merged source provenance; do not relabel or replace a 0.4.1 artifact.

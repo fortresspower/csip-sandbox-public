@@ -62,11 +62,31 @@ export function makeTestPki(): TestPki {
           'req', '-newkey', 'rsa:2048', '-nodes', '-sha256', '-subj', `/CN=${commonName}`,
           '-keyout', leafKey, '-out', csr,
         ]);
-        openssl([
-          'x509', '-req', '-sha256', '-days', String(days), '-in', csr,
-          '-CA', certPath, '-CAkey', keyPath, '-CAserial', join(dir, `${name}.srl`),
-          '-CAcreateserial', '-extfile', extensions, '-out', leafCert,
-        ]);
+        if (days === 0) {
+          // Historical dates make expiry deterministic, independent of test timing.
+          const database = join(dir, `${name}-${leafName}.index`);
+          const serial = join(dir, `${name}-${leafName}.serial`);
+          const config = join(dir, `${name}-${leafName}.cnf`);
+          writeFileSync(database, '');
+          writeFileSync(serial, '01\n');
+          writeFileSync(config, [
+            '[ca]', 'default_ca=test', '[test]',
+            `database=${database}`, `serial=${serial}`, `new_certs_dir=${dir}`,
+            `certificate=${certPath}`, `private_key=${keyPath}`,
+            'default_md=sha256', 'policy=subject', '[subject]', 'commonName=supplied', '',
+          ].join('\n'));
+          openssl([
+            'ca', '-batch', '-config', config, '-in', csr, '-out', leafCert,
+            '-notext', '-extfile', extensions,
+            '-startdate', '20000101000000Z', '-enddate', '20000102000000Z',
+          ]);
+        } else {
+          openssl([
+            'x509', '-req', '-sha256', '-days', String(days), '-in', csr,
+            '-CA', certPath, '-CAkey', keyPath, '-CAserial', join(dir, `${name}.srl`),
+            '-CAcreateserial', '-extfile', extensions, '-out', leafCert,
+          ]);
+        }
         return {
           certificate: readFileSync(leafCert),
           privateKey: readFileSync(leafKey),
@@ -75,9 +95,14 @@ export function makeTestPki(): TestPki {
     };
   };
 
-  return {
-    root: authority('primary'),
-    otherRoot: authority('other'),
-    cleanup: () => rmSync(dir, { recursive: true, force: true }),
-  };
+  try {
+    return {
+      root: authority('primary'),
+      otherRoot: authority('other'),
+      cleanup: () => rmSync(dir, { recursive: true, force: true }),
+    };
+  } catch (error) {
+    rmSync(dir, { recursive: true, force: true });
+    throw error;
+  }
 }

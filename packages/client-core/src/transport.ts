@@ -68,23 +68,37 @@ function hasBytes(value: Uint8Array | undefined): value is Uint8Array {
 function validateTls(
   tls: CsipTlsMaterial | undefined,
   environment: CsipTransportOptions['environment'],
+  baseUrl: URL,
+  serverTrust: CsipTransportOptions['serverTrust'],
 ): asserts tls is CsipTlsMaterial {
+  // Exact origin equality prevents normalization or a path from widening private trust.
+  if (serverTrust !== undefined && (
+    serverTrust.kind !== 'connection-ca'
+    || baseUrl.protocol !== 'https:'
+    || serverTrust.origin !== baseUrl.origin
+  )) {
+    throw new CsipConfigurationError('serverTrust requires kind connection-ca and the canonical HTTPS base URL origin');
+  }
   if (!tls || !hasBytes(tls.certificate) || !hasBytes(tls.privateKey)) {
     throw new CsipConfigurationError(
       'HTTPS connections require a client certificate chain and matching private key',
     );
   }
-  if (environment === 'deployed' && tls.certificateAuthorities !== undefined) {
+  if (environment === 'deployed' && serverTrust === undefined && tls.certificateAuthorities !== undefined) {
     throw new CsipConfigurationError(
-      'custom CA certificates are permitted only for explicit local-test fixtures; deployed connections use system server trust',
+      'custom CA certificates require an explicit serverTrust policy or local-test fixture; deployed connections otherwise use system server trust',
     );
+  }
+  // An explicit policy must never fall back to system roots when its CA is omitted.
+  if (serverTrust !== undefined && tls.certificateAuthorities === undefined) {
+    throw new CsipConfigurationError('serverTrust requires non-empty custom CA certificates');
   }
   if (
     tls.certificateAuthorities !== undefined
     && (tls.certificateAuthorities.length === 0
       || tls.certificateAuthorities.some((authority) => !hasBytes(authority)))
   ) {
-    throw new CsipConfigurationError('local-test custom CA certificates must be non-empty');
+    throw new CsipConfigurationError('custom CA certificates must be non-empty');
   }
 }
 
@@ -169,7 +183,9 @@ export function createCsipTransport(options: CsipTransportOptions): CsipTranspor
       throw new CsipConfigurationError('deployed CSIP endpoints must use TCP 443');
     }
   }
-  if (baseUrl.protocol === 'https:') validateTls(options.tls, options.environment);
+  if (baseUrl.protocol === 'https:' || options.serverTrust !== undefined) {
+    validateTls(options.tls, options.environment, baseUrl, options.serverTrust);
+  }
   if (baseUrl.protocol === 'http:' && options.environment !== 'local-test') {
     throw new CsipConfigurationError('plain HTTP is permitted only for explicit local-test transports');
   }
