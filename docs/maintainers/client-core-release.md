@@ -75,11 +75,12 @@ When the public client-core contract changes, increment the semantic version bef
 building. Any protocol-runtime change also increments the pinned protocol version and is
 visible in the manifest even when the client-core API is unchanged.
 
-## 0.4.2 release note
+## 0.5.0 release note
 
 Adds `CsipConnectionServerTrust` and `CsipTransportOptions.serverTrust`; see
 [Per-connection server CA trust](../partner/onboarding.md#per-connection-server-ca-trust)
-for the policy contract.
+for the policy contract. The CLI doctor and conformance commands also accept an explicit
+server CA on deployed connections. The new public exports require a minor version bump.
 
 After merging the versioned source, follow [Build and prove the release](#build-and-prove-the-release)
 from the clean merged commit. Run `npm run test:client-core-scale` to record

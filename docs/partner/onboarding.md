@@ -104,7 +104,7 @@ prerequisite.
 
 ## Per-connection server CA trust
 
-`@fortress-csip/client-core` 0.4.2 supports an explicit server-trust policy for a connection
+`@fortress-csip/client-core` 0.5.0 supports an explicit server-trust policy for a connection
 whose server uses a private CA. Agree on the canonical HTTPS origin and the public server CA
 chain through the secure onboarding channel. Server CA trust and the client certificate's
 issuing chain are separate: the former authenticates the server to the client; the latter
@@ -134,8 +134,9 @@ try {
 }
 ```
 
-`serverTrust.origin` must exactly equal the canonical HTTPS `baseUrl.origin`, without a
-path, trailing slash or explicit default port. A path in `baseUrl` does not change its origin.
+`serverTrust.origin` and `baseUrl` must use HTTPS and have the same origin after
+normalization with `new URL(value).origin`. Case, paths, trailing slashes and an explicit
+default port do not change an origin; a different host, scheme or port does.
 The CA array must contain at least one non-empty entry. These requirements prevent a private
 trust policy from applying to another origin or silently falling back to public roots.
 
@@ -148,6 +149,22 @@ For ordinary server trust, omit both `serverTrust` and `tls.certificateAuthoriti
 Deployed connections still reject custom CA bytes without the explicit policy. The separate
 `local-test` fixture behavior remains unchanged. See also
 [Transport / security](../../README.md#transport--security).
+
+The CLI uses the same per-connection trust for deployed checks. Pass the agreed public
+server CA with `--ca` to both readiness and conformance commands:
+
+```bash
+fortress-csip doctor https://server.example --ca ./server-ca.pem \
+  --cert ./client-chain.pem --key ./client-key.pem
+fortress-csip conformance https://server.example --ca ./server-ca.pem \
+  --cert ./client-chain.pem --key ./client-key.pem --out ./conformance-evidence.json
+```
+
+Omit `--ca` for standard system trust. An explicit CA replaces system roots for the
+specified origin; an empty or incorrect CA fails verification. `--local` is only for
+loopback rehearsals and is not required for a deployed private-CA server. Conformance
+registers synthetic devices and publishes rehearsal responses and telemetry; arrange its
+operator steps before running it against the agreed test connection.
 
 ## Certificate identity and rotation
 

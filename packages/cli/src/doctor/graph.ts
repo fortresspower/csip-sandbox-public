@@ -42,6 +42,9 @@ export function createDoctorTransport(options: GraphCheckOptions): CsipTransport
   return createCsipTransport({
     baseUrl: options.origin,
     environment: options.mode === 'local' ? 'local-test' : 'deployed',
+    ...(options.certificateAuthorities === undefined ? {} : {
+      serverTrust: { origin: new URL(options.origin).origin, kind: 'connection-ca' },
+    }),
     tls: {
       certificate: options.certificate,
       privateKey: options.privateKey,

@@ -9,7 +9,7 @@ export interface CsipTlsMaterial {
 }
 
 export interface CsipConnectionServerTrust {
-  /** Canonical HTTPS origin to which this private trust applies. */
+  /** HTTPS URL whose normalized origin must match the connection origin. */
   origin: string;
   kind: 'connection-ca';
 }

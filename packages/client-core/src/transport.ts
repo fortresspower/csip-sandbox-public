@@ -71,13 +71,23 @@ function validateTls(
   baseUrl: URL,
   serverTrust: CsipTransportOptions['serverTrust'],
 ): asserts tls is CsipTlsMaterial {
-  // Exact origin equality prevents normalization or a path from widening private trust.
-  if (serverTrust !== undefined && (
-    serverTrust.kind !== 'connection-ca'
-    || baseUrl.protocol !== 'https:'
-    || serverTrust.origin !== baseUrl.origin
-  )) {
-    throw new CsipConfigurationError('serverTrust requires kind connection-ca and the canonical HTTPS base URL origin');
+  if (serverTrust !== undefined) {
+    if (serverTrust.kind !== 'connection-ca') {
+      throw new CsipConfigurationError('serverTrust kind must be connection-ca');
+    }
+    let trustUrl: URL;
+    try {
+      trustUrl = new URL(serverTrust.origin);
+    } catch {
+      throw new CsipConfigurationError('serverTrust origin must be a valid HTTPS URL');
+    }
+    if (trustUrl.protocol !== 'https:' || baseUrl.protocol !== 'https:') {
+      throw new CsipConfigurationError('serverTrust requires HTTPS for both policy and base URL');
+    }
+    // URL normalization permits equivalent spellings, never a different origin.
+    if (trustUrl.origin !== new URL(baseUrl).origin) {
+      throw new CsipConfigurationError(`serverTrust origin must match expected origin ${baseUrl.origin}`);
+    }
   }
   if (!tls || !hasBytes(tls.certificate) || !hasBytes(tls.privateKey)) {
     throw new CsipConfigurationError(

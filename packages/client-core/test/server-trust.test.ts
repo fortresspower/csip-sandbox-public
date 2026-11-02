@@ -74,23 +74,28 @@ describe('explicit connection server trust', () => {
   }
 
   it.each<CsipTransportEnvironment>(['deployed', 'local-test'])(
-    'requires a canonical matching HTTPS origin and supported kind in %s', (environment) => {
+    'normalizes equivalent origins and distinguishes invalid policies before DNS in %s', (environment) => {
       const resolveDns = vi.fn(async () => ['127.0.0.1']);
+      const base = { baseUrl: 'https://SERVER.example:443/sep2', environment, tls: tls(), resolveDns };
       for (const origin of [
-        'https://other.example', 'https://partner.example/', 'https://partner.example/sep2',
-        'https://PARTNER.example', 'https://partner.example:443', 'http://partner.example',
-        'https://partner.example?query', 'https://partner.example#fragment',
-        'https://user@partner.example', 'invalid',
+        'https://server.example', 'https://SERVER.example/', 'https://server.example/sep2',
+        'https://server.example:443',
       ]) {
-        expect(() => createCsipTransport({
-          baseUrl: 'https://partner.example/sep2', environment, tls: tls(),
-          serverTrust: policy(origin), resolveDns,
-        })).toThrow(CsipConfigurationError);
+        const transport = createCsipTransport({ ...base, serverTrust: policy(origin) });
+        transports.push(transport);
+        expect(transport.origin).toBe('https://server.example');
       }
-      expect(() => createCsipTransport({
-        baseUrl: 'https://partner.example', environment, tls: tls(), resolveDns,
-        serverTrust: { origin: 'https://partner.example', kind: 'unknown' as 'connection-ca' },
-      })).toThrow(CsipConfigurationError);
+      for (const origin of ['https://other.example', 'https://server.example:8443', 'https://server.example.evil']) {
+        expect(() => createCsipTransport({ ...base, serverTrust: policy(origin) }))
+          .toThrow('serverTrust origin must match expected origin https://server.example');
+      }
+      expect(() => createCsipTransport({ ...base, serverTrust: policy('http://server.example') }))
+        .toThrow('serverTrust requires HTTPS for both policy and base URL');
+      expect(() => createCsipTransport({ ...base, serverTrust: policy('invalid') }))
+        .toThrow('serverTrust origin must be a valid HTTPS URL');
+      expect(() => createCsipTransport({ ...base,
+        serverTrust: { origin: 'https://server.example', kind: 'unknown' as 'connection-ca' },
+      })).toThrow('serverTrust kind must be connection-ca');
       expect(resolveDns).not.toHaveBeenCalled();
     },
   );

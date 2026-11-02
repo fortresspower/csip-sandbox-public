@@ -71,27 +71,20 @@ function checkServerCertificate(
   }
 
   const certificate = certificateOf(outcome);
-  if (certificate === undefined) {
-    // A rejection before any certificate was presented is still an enforcing server; the
-    // mutual-TLS check below is the one that judges that. Here it is simply unknown.
-    report.skip(
+  const trustError = outcome.kind === 'tls-rejected' ? outcome.serverTrustError : undefined;
+  if (trustError !== undefined || (certificate?.authorized === false && certificate.authorizationError !== undefined)) {
+    report.fail(
       'transport.server-certificate',
-      'the peer closed the handshake before its certificate could be inspected',
+      `the server certificate was not trusted (${trustError ?? certificate?.authorizationError})`,
+      'Serve a certificate from a publicly trusted CA, or pass the correct agreed server CA with --ca. ' +
+        'An explicit CA replaces system roots for this connection.',
     );
     return;
   }
-
-  const trusted =
-    certificate.authorized || (options.mode === 'local' && options.certificateAuthorities !== undefined);
-  if (!trusted && certificate.authorizationError !== undefined) {
-    const remediation =
-      options.mode === 'deployed'
-        ? 'Deployed connections use the standard public trust store. Serve a certificate from a publicly trusted CA.'
-        : 'Pass the issuing root with --ca for a local rehearsal.';
-    report.fail(
+  if (certificate === undefined) {
+    report.skip(
       'transport.server-certificate',
-      `the server certificate was not trusted (${certificate.authorizationError})`,
-      remediation,
+      'the peer closed the handshake before its certificate could be inspected',
     );
     return;
   }
@@ -134,6 +127,10 @@ function matchesHostname(pattern: string, hostname: string): boolean {
 }
 
 function checkMutualTlsRequired(report: ReportBuilder, outcome: ProbeOutcome): void {
+  if (outcome.kind === 'tls-rejected' && outcome.serverTrustError !== undefined) {
+    report.skip('mtls.required', 'server verification failed before client authentication could be tested');
+    return;
+  }
   if (outcome.kind === 'tls-rejected') {
     report.pass('mtls.required', 'an anonymous client was rejected during the TLS handshake');
     return;

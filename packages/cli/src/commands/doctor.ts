@@ -51,8 +51,8 @@ export function doctorCommand(): Command {
         'Options:',
         '  --cert PATH            Client certificate to authenticate with',
         '  --key PATH             Private key for that certificate',
-        '  --ca PATH              Extra trust root (requires --local)',
-        '  --local                Loopback rehearsal: permits --ca and a non-443 port',
+        '  --ca PATH              Server CA for this connection (replaces system roots)',
+        '  --local                Loopback rehearsal: permits a non-443 port',
         `  --path PATH            DeviceCapability path (default ${DEFAULT_DEVICE_CAPABILITY_PATH})`,
         '',
         ...REPORT_HELP,
@@ -89,14 +89,6 @@ export function doctorCommand(): Command {
       const asJson = flag(values, 'json');
       const outPath = stringOption(values, 'out', 'doctor');
 
-      // A custom trust root is the one input that can turn a real check into a self-fulfilling
-      // one, so it is admissible only in the mode that is also pinned to loopback.
-      if (caPath !== undefined && mode !== 'local') {
-        throw new UsageError(
-          '--ca is permitted only with --local: a deployed connection uses the standard public trust store',
-          'doctor',
-        );
-      }
       if ((certPath === undefined) !== (keyPath === undefined)) {
         throw new UsageError('--cert and --key must be given together', 'doctor');
       }
@@ -128,6 +120,10 @@ export function doctorCommand(): Command {
           skipAuthenticatedChecks(report);
         } else {
           const probeUrl = new URL(deviceCapabilityPath, parsed.url.origin);
+          // Keep an explicit server CA on the checked connection, even with --path.
+          if (probeUrl.origin !== parsed.url.origin) {
+            throw new UsageError(`--path must use the expected origin ${parsed.url.origin}`, 'doctor');
+          }
           await runTransportChecks(report, {
             url: probeUrl,
             address,
