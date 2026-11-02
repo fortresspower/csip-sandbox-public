@@ -231,12 +231,11 @@ DERStatus, and DERCapability lanes; and requires verified TLS plus a client cert
 every non-loopback connection. The production-shaped partner-loop tests exercise those paths
 against the example server with randomized opaque resource identifiers.
 
-Deployed transports authenticate the partner server with Node's standard public trust store and
-authenticate Fortress with the connection-specific client certificate chain. They accept only a
+Deployed transports use the server-trust policy described in [Transport / security](#transport--security)
+and authenticate Fortress with the connection-specific client certificate chain. They accept only a
 public DNS origin on HTTPS/TCP 443, re-resolve and reject private, mixed, and reserved answers,
 follow no redirects or cross-origin links, bound response bytes and deadlines, and use a
-connection-scoped circuit breaker. Custom server CA input is available only to explicit
-`local-test` fixtures.
+connection-scoped circuit breaker.
 
 For six-figure fleets, one caller-owned round starts with
 `ResourceClient.endDeviceFleet()`. The immutable snapshot is bound to that exact

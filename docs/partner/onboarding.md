@@ -104,8 +104,9 @@ prerequisite.
 The partner server certificate and Fortress client certificate have different trust roles. The
 server certificate must chain to standard public trust; Fortress does not store a custom partner
 root. The private Fortress issuing CA is used only for the client identity that the partner
-authenticates. Custom server CA input in `client-core` is confined to explicit `local-test`
-fixtures.
+authenticates. For the reusable library's separate custom server-trust option, see
+[Transport / security](../../README.md#transport--security); it does not change this onboarding
+contract.
 
 ## Certificate identity and rotation
 

@@ -26,8 +26,8 @@ client-core-owned `Csip*` types.
 
 The generated package has no runtime registry dependencies. Its smoke test installs with an
 empty npm cache and `--offline`, imports the ESM and CommonJS APIs, derives a device LFDI, rejects leaked
-protocol exports, and typechecks an empty TypeScript consumer, including deployed TLS material
-with a client certificate chain and private key but no custom server CA.
+protocol exports, and typechecks TypeScript consumers, including deployed TLS material with
+a client certificate chain and private key, both with and without explicit custom server trust.
 
 ## Build and prove the release
 
@@ -77,13 +77,10 @@ visible in the manifest even when the client-core API is unchanged.
 
 ## 0.4.2 release note
 
-Adds optional connection-scoped private server trust through `CsipConnectionServerTrust`
-and `CsipTransportOptions.serverTrust`. Explicit policies require a canonical matching HTTPS
-origin and non-empty CA bytes, preventing private trust from leaking to another origin or
-silently falling back to system roots. Default server trust and all network restrictions
-remain unchanged.
+Adds `CsipConnectionServerTrust` and `CsipTransportOptions.serverTrust`; see
+[Transport / security](../../README.md#transport--security) for the policy contract.
 
-After merging the versioned source, run `npm ci` and `npm run release:bundle` from the clean
-merged commit, then `npm run release:verify`. Run `npm run test:client-core-scale` to record
+After merging the versioned source, follow [Build and prove the release](#build-and-prove-the-release)
+from the clean merged commit. Run `npm run test:client-core-scale` to record
 the scale report alongside the generated tarball, manifest and checksums. Distribute those
 artifacts with the merged source provenance; do not relabel or replace a 0.4.1 artifact.
