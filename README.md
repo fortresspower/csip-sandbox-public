@@ -345,14 +345,10 @@ the `fortress:*` mRID convention.)
 > Never expose local-demo mode to the public internet or point it at grid-connected equipment.
 
 Every non-loopback `client-core` connection requires verified TLS and a client certificate.
-By default the partner server certificate must chain to Node's standard trust store. A
-connection can instead provide `serverTrust: { origin: 'https://partner.example',
-kind: 'connection-ca' }` with non-empty `tls.certificateAuthorities`. The policy origin must
-exactly match the canonical HTTPS origin of `baseUrl` (no path or trailing slash). These CA
-bytes replace system roots for that transport alone; hostname verification, mutual TLS,
-public-address checks and redirect restrictions still apply. Omitting the policy preserves
-the default trust behavior; custom CA bytes without it remain restricted to `local-test`
-fixtures. The private Fortress CA is for the client identity, which the partner verifies.
+Server trust defaults to Node's standard trust store. For explicit per-connection private
+CA trust and its configuration requirements, see
+[Per-connection server CA trust](docs/partner/onboarding.md#per-connection-server-ca-trust).
+The private Fortress CA is for the client identity, which the partner verifies.
 The example server also has an explicit `CSIP_SERVER_MODE=partner` bootstrap with durable
 persistence and certificate-derived connection authorization; it does not expose the console
 or `/test/*`. This repository deliberately includes no Fortress cloud infrastructure or

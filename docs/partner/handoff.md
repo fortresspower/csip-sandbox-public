@@ -11,9 +11,8 @@ organizations through the agreed secure channel.
 
 This is the part that most often gets described backwards.
 
-**Your server certificate uses ordinary public trust.** Fortress validates it through the
-standard public trust store, exactly as a browser would. You do not supply Fortress a private
-or partner-specific server CA, and Fortress will not pin one.
+For the server certificate's trust requirements and the explicit private-CA option, see
+[Per-connection server CA trust](./onboarding.md#per-connection-server-ca-trust).
 
 **The Fortress client certificate is a private identity.** Fortress supplies you the public
 issuing chain during onboarding. You install that issuer in your server's *client* trust store
@@ -29,7 +28,7 @@ machine, before any of this material exists.
 **You provide:**
 
 - a stable public HTTPS origin on TCP 443, backed by public DNS;
-- a server certificate from a CA in the standard public trust store;
+- a server certificate meeting the [server-trust requirements](./onboarding.md#per-connection-server-ca-trust);
 - a technical contact and an operations contact;
 - your requested fleet and cadence tier;
 - a completed conformance evidence artifact.

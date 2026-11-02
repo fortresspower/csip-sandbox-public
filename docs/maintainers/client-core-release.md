@@ -78,7 +78,8 @@ visible in the manifest even when the client-core API is unchanged.
 ## 0.4.2 release note
 
 Adds `CsipConnectionServerTrust` and `CsipTransportOptions.serverTrust`; see
-[Transport / security](../../README.md#transport--security) for the policy contract.
+[Per-connection server CA trust](../partner/onboarding.md#per-connection-server-ca-trust)
+for the policy contract.
 
 After merging the versioned source, follow [Build and prove the release](#build-and-prove-the-release)
 from the clean merged commit. Run `npm run test:client-core-scale` to record
