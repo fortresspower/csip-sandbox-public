@@ -87,7 +87,7 @@ function contract() {
     },
     partnerProvides: [
       'a stable public HTTPS origin on TCP 443, backed by public DNS',
-      'a server certificate from a CA in the standard public trust store',
+      'a server certificate meeting the server-trust requirements in docs/partner/onboarding.md#per-connection-server-ca-trust',
       'a technical contact and an operations contact',
       'the requested fleet and cadence tier',
       'a completed conformance evidence artifact',
