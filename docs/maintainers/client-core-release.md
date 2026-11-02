@@ -12,7 +12,7 @@ particular consumer installs the resulting artifact is that consumer's own conce
 
 The bundle contains exactly three output files under the ignored `release/` directory:
 
-- `fortress-csip-client-core-<version>.tgz` — the installable ESM package;
+- `fortress-csip-client-core-<version>.tgz` — the installable ESM and CommonJS package;
 - `manifest.json` — source commit, core and protocol versions, protocol input hashes,
   bundled third-party package names, package file inventory, and tarball SHA-256; and
 - `SHA256SUMS` — the standard checksum line for the tarball.
@@ -25,9 +25,9 @@ serializers, constants, workspace paths, or `src` files. Public declarations use
 client-core-owned `Csip*` types.
 
 The generated package has no runtime registry dependencies. Its smoke test installs with an
-empty npm cache and `--offline`, imports the ESM API, derives a device LFDI, rejects leaked
-protocol exports, and typechecks an empty TypeScript consumer, including deployed TLS material
-with a client certificate chain and private key but no custom server CA.
+empty npm cache and `--offline`, imports the ESM and CommonJS APIs, derives a device LFDI, rejects leaked
+protocol exports, and typechecks TypeScript consumers, including deployed TLS material with
+a client certificate chain and private key, both with and without explicit custom server trust.
 
 ## Build and prove the release
 
@@ -74,3 +74,15 @@ registry token.
 When the public client-core contract changes, increment the semantic version before
 building. Any protocol-runtime change also increments the pinned protocol version and is
 visible in the manifest even when the client-core API is unchanged.
+
+## 0.5.0 release note
+
+Adds `CsipConnectionServerTrust` and `CsipTransportOptions.serverTrust`; see
+[Per-connection server CA trust](../partner/onboarding.md#per-connection-server-ca-trust)
+for the policy contract. The CLI doctor and conformance commands also accept an explicit
+server CA on deployed connections. The new public exports require a minor version bump.
+
+After merging the versioned source, follow [Build and prove the release](#build-and-prove-the-release)
+from the clean merged commit. Run `npm run test:client-core-scale` to record
+the scale report alongside the generated tarball, manifest and checksums. Distribute those
+artifacts with the merged source provenance; do not relabel or replace a 0.4.1 artifact.

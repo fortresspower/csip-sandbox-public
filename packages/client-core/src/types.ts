@@ -4,8 +4,14 @@ export interface CsipTlsMaterial {
   /** PEM client certificate followed by any issuing intermediates. */
   certificate: Uint8Array;
   privateKey: Uint8Array;
-  /** Custom server trust is available only to explicit local-test fixtures. */
+  /** Custom server trust for local-test fixtures or an explicit serverTrust policy. */
   certificateAuthorities?: Uint8Array[];
+}
+
+export interface CsipConnectionServerTrust {
+  /** HTTPS URL whose normalized origin must match the connection origin. */
+  origin: string;
+  kind: 'connection-ca';
 }
 
 export interface CsipCircuitBreakerOptions {
@@ -19,6 +25,7 @@ export interface CsipTransportOptions {
   baseUrl: string;
   environment: CsipTransportEnvironment;
   tls?: CsipTlsMaterial;
+  serverTrust?: CsipConnectionServerTrust;
   timeoutMs?: number;
   maxResponseBytes?: number;
   resolveDns?: DnsResolver;

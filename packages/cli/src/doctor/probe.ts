@@ -2,7 +2,7 @@ import * as http from 'node:http';
 import * as https from 'node:https';
 import { isIP, type LookupFunction } from 'node:net';
 import type { PeerCertificate } from 'node:tls';
-import { DEFAULT_MAX_RESPONSE_BYTES } from '@fortress-csip/client-core';
+import { CsipConfigurationError, DEFAULT_MAX_RESPONSE_BYTES } from '@fortress-csip/client-core';
 
 /**
  * A single bounded request made *without* a client certificate.
@@ -27,7 +27,7 @@ export interface ProbeOptions {
    * origin checks. The probe performs no lookup of its own.
    */
   address: string;
-  /** Extra roots, permitted only in --local mode. */
+  /** Explicit server CA for this request origin; replaces system roots. */
   certificateAuthorities?: Uint8Array[];
   timeoutMs?: number;
   maxResponseBytes?: number;
@@ -45,7 +45,7 @@ export type ProbeOutcome =
       truncated: boolean;
       certificate?: ProbedCertificate;
     }
-  | { kind: 'tls-rejected'; detail: string; certificate?: ProbedCertificate }
+  | { kind: 'tls-rejected'; detail: string; certificate?: ProbedCertificate; serverTrustError?: string }
   | { kind: 'network-error'; code: string; detail: string }
   | { kind: 'timeout' };
 
@@ -67,6 +67,16 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_BYTES = DEFAULT_MAX_RESPONSE_BYTES;
 
 export async function probeAnonymously(options: ProbeOptions): Promise<ProbeOutcome> {
+  // Empty explicit trust must fail rather than using the system trust store.
+  if (options.certificateAuthorities !== undefined) {
+    if (options.url.protocol !== 'https:') {
+      throw new CsipConfigurationError('custom server CA requires HTTPS');
+    }
+    if (options.certificateAuthorities.length === 0
+      || options.certificateAuthorities.some((ca) => ca.byteLength === 0)) {
+      throw new CsipConfigurationError('custom CA certificates must be non-empty');
+    }
+  }
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxBytes = options.maxResponseBytes ?? DEFAULT_MAX_BYTES;
   const secure = options.url.protocol === 'https:';
@@ -141,7 +151,14 @@ export async function probeAnonymously(options: ProbeOptions): Promise<ProbeOutc
       const code = String(error.code ?? '');
       const message = String(error.message ?? '');
       if (isTlsRejection(code, message, secure)) {
-        finish({ kind: 'tls-rejected', detail: message, certificate: describeSocket(request) });
+        finish({ kind: 'tls-rejected', detail: message, certificate: describeSocket(request),
+          // These are local server-verification failures, not proof of client rejection.
+          ...(code.startsWith('CERT_') || code.startsWith('ERR_TLS_CERT_')
+            || ['DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN',
+              'UNABLE_TO_GET_ISSUER_CERT', 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+              'UNABLE_TO_VERIFY_LEAF_SIGNATURE'].includes(code)
+            ? { serverTrustError: code } : {}),
+        });
         return;
       }
       finish({ kind: 'network-error', code: code || 'UNKNOWN', detail: message });
@@ -182,7 +199,7 @@ function describeSocket(request: http.ClientRequest): ProbedCertificate | undefi
   } catch {
     return undefined;
   }
-  if (peer === undefined || Object.keys(peer).length === 0) return undefined;
+  if (peer == null || Object.keys(peer).length === 0) return undefined;
 
   return {
     subjectCommonName: firstCommonName(peer.subject?.CN),

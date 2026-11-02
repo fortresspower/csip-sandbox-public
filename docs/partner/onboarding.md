@@ -16,16 +16,17 @@ separate site roster in Fortress.
 ## What each side provides
 
 The two sides trust each other in opposite directions, and it is worth being precise about
-which. Your **server** certificate uses ordinary public server trust: Fortress validates it
-through the standard public trust store, exactly as a browser would, and you do not supply
-Fortress a private or partner-specific server CA. Fortress's **client** certificate is the
+which. By default, your **server** certificate uses ordinary public server trust. If it
+uses a private CA, agree on explicit per-connection server trust during onboarding, as
+[described below](#per-connection-server-ca-trust). Fortress's **client** certificate is the
 private identity: Fortress supplies you its public issuing chain during onboarding, and you
 install that issuer and separately allowlist the exact aggregator LFDI derived from the leaf.
 
 The partner provides:
 
 - one stable public HTTPS origin on TCP 443, backed by public DNS;
-- a server certificate issued by a CA in the standard public trust store;
+- a server certificate issued by a CA in the standard public trust store, or the CA chain
+  agreed for explicit per-connection server trust;
 - a technical contact and an operations contact for certificate rotation, outages, and
   assignment changes;
 - the requested fleet and cadence tier;
@@ -53,14 +54,14 @@ registers it in-band through the discovered EndDeviceList resource.
 ## The onboarding sequence
 
 1. The partner shares its origin, contacts, requested fleet tier, and completed conformance
-   evidence artifact through the approved secure channel. Fortress does not ingest or pin a
-   partner-specific server CA; the partner's server is validated through public trust.
+   evidence artifact through the approved secure channel. If the server uses a private CA,
+   include its public CA chain for the agreed connection-specific trust configuration.
 2. Fortress creates an operator-paused connection and a connection-specific client certificate.
 3. Fortress computes the aggregator LFDI from the leaf certificate and gives the partner the
    public certificate chain, LFDI, fingerprint, and expiry. The partner installs the supplied
    client issuer and allowlists that exact LFDI; either check alone is insufficient.
-4. Fortress verifies the server with the standard public trust store, completes mutual TLS,
-   and fetches `/sep2/capability`. A wrong server name, untrusted server, untrusted client, or
+4. Fortress verifies the server with the standard public trust store or the explicitly
+   configured connection CA, completes mutual TLS, and fetches `/sep2/capability`. A wrong server name, untrusted server, untrusted client, or
    trusted-but-not-allowlisted client must fail.
 5. While operator contact remains paused, both sides validate the graph and evidence. Fortress
    then reconciles and registers the sites currently permitted for telemetry; later permission
@@ -101,11 +102,69 @@ Public mTLS is the supported default. VPN, VPC peering, PrivateLink, static IP a
 out-of-band EndDevice maintenance is an exception requiring separate review, not an onboarding
 prerequisite.
 
-The partner server certificate and Fortress client certificate have different trust roles. The
-server certificate must chain to standard public trust; Fortress does not store a custom partner
-root. The private Fortress issuing CA is used only for the client identity that the partner
-authenticates. Custom server CA input in `client-core` is confined to explicit `local-test`
-fixtures.
+## Per-connection server CA trust
+
+`@fortress-csip/client-core` 0.5.0 supports an explicit server-trust policy for a connection
+whose server uses a private CA. Agree on the canonical HTTPS origin and the public server CA
+chain through the secure onboarding channel. Server CA trust and the client certificate's
+issuing chain are separate: the former authenticates the server to the client; the latter
+lets the server authenticate the client. Never exchange either side's private key.
+
+Configure private server trust only on the transport for that origin:
+
+```ts
+import { readFile } from 'node:fs/promises';
+import { createCsipTransport } from '@fortress-csip/client-core';
+
+const origin = 'https://server.example';
+const transport = createCsipTransport({
+  baseUrl: `${origin}/sep2`,
+  environment: 'deployed',
+  serverTrust: { origin, kind: 'connection-ca' },
+  tls: {
+    certificate: await readFile('./client-chain.pem'),
+    privateKey: await readFile('./client-key.pem'),
+    certificateAuthorities: [await readFile('./server-ca.pem')],
+  },
+});
+try {
+  await transport.get('/sep2/capability');
+} finally {
+  transport.close();
+}
+```
+
+`serverTrust.origin` and `baseUrl` must use HTTPS and have the same origin after
+normalization with `new URL(value).origin`. Case, paths, trailing slashes and an explicit
+default port do not change an origin; a different host, scheme or port does.
+The CA array must contain at least one non-empty entry. These requirements prevent a private
+trust policy from applying to another origin or silently falling back to public roots.
+
+The supplied CA bytes replace Node's system roots for this transport alone. Hostname
+verification and verified mutual TLS remain required, as do deployed public DNS/address,
+HTTPS/TCP-443, resource-origin and redirect restrictions. This policy grants server trust
+only; it does not enroll a connection or enable polling, telemetry or controls.
+
+For ordinary server trust, omit both `serverTrust` and `tls.certificateAuthorities`.
+Deployed connections still reject custom CA bytes without the explicit policy. The separate
+`local-test` fixture behavior remains unchanged. See also
+[Transport / security](../../README.md#transport--security).
+
+The CLI uses the same per-connection trust for deployed checks. Pass the agreed public
+server CA with `--ca` to both readiness and conformance commands:
+
+```bash
+fortress-csip doctor https://server.example --ca ./server-ca.pem \
+  --cert ./client-chain.pem --key ./client-key.pem
+fortress-csip conformance https://server.example --ca ./server-ca.pem \
+  --cert ./client-chain.pem --key ./client-key.pem --out ./conformance-evidence.json
+```
+
+Omit `--ca` for standard system trust. An explicit CA replaces system roots for the
+specified origin; an empty or incorrect CA fails verification. `--local` is only for
+loopback rehearsals and is not required for a deployed private-CA server. Conformance
+registers synthetic devices and publishes rehearsal responses and telemetry; arrange its
+operator steps before running it against the agreed test connection.
 
 ## Certificate identity and rotation
 

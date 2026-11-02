@@ -231,12 +231,11 @@ DERStatus, and DERCapability lanes; and requires verified TLS plus a client cert
 every non-loopback connection. The production-shaped partner-loop tests exercise those paths
 against the example server with randomized opaque resource identifiers.
 
-Deployed transports authenticate the partner server with Node's standard public trust store and
-authenticate Fortress with the connection-specific client certificate chain. They accept only a
+Deployed transports use the server-trust policy described in [Transport / security](#transport--security)
+and authenticate Fortress with the connection-specific client certificate chain. They accept only a
 public DNS origin on HTTPS/TCP 443, re-resolve and reject private, mixed, and reserved answers,
 follow no redirects or cross-origin links, bound response bytes and deadlines, and use a
-connection-scoped circuit breaker. Custom server CA input is available only to explicit
-`local-test` fixtures.
+connection-scoped circuit breaker.
 
 For six-figure fleets, one caller-owned round starts with
 `ResourceClient.endDeviceFleet()`. The immutable snapshot is bound to that exact
@@ -346,10 +345,10 @@ the `fortress:*` mRID convention.)
 > Never expose local-demo mode to the public internet or point it at grid-connected equipment.
 
 Every non-loopback `client-core` connection requires verified TLS and a client certificate.
-The partner server certificate must chain to Node's standard public trust store; deployed
-connections neither accept nor store a partner-specific root CA. The private Fortress CA is for
-the client identity, which the partner verifies. Custom CA trust is restricted to explicit
-`local-test` fixtures.
+Server trust defaults to Node's standard trust store. For explicit per-connection private
+CA trust and its configuration requirements, see
+[Per-connection server CA trust](docs/partner/onboarding.md#per-connection-server-ca-trust).
+The private Fortress CA is for the client identity, which the partner verifies.
 The example server also has an explicit `CSIP_SERVER_MODE=partner` bootstrap with durable
 persistence and certificate-derived connection authorization; it does not expose the console
 or `/test/*`. This repository deliberately includes no Fortress cloud infrastructure or

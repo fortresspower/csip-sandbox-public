@@ -302,15 +302,6 @@ describe('graph diagnosis', () => {
 });
 
 describe('mode rules', () => {
-  it('rejects --ca outside --local', async () => {
-    const { code, err } = await doctor(
-      ['https://csip.partner.example', '--ca', '/w/root.pem'],
-      CLIENT_FILES(),
-    );
-    expect(code).toBe(EXIT_USAGE);
-    expect(err).toContain('--ca is permitted only with --local');
-  });
-
   it('rejects --local when the name resolves off loopback', async () => {
     const { context, io } = testContext({
       resolveHost: fixedHostResolver({ 'not-really-local.example': ['203.0.113.10'] }),

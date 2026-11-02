@@ -57,8 +57,8 @@ export function conformanceCommand(): Command {
         '  --self-test            Run against the bundled example server, with no endpoint',
         '  --cert PATH            Client certificate to authenticate with',
         '  --key PATH             Private key for that certificate',
-        '  --ca PATH              Extra trust root (requires --local)',
-        '  --local                Loopback rehearsal: permits --ca and a non-443 port',
+        '  --ca PATH              Server CA for this connection (replaces system roots)',
+        '  --local                Loopback rehearsal: permits a non-443 port',
         `  --path PATH            DeviceCapability path (default ${DEFAULT_DEVICE_CAPABILITY_PATH})`,
         `  --session PATH         Resumable session state (default ${DEFAULT_SESSION_FILE})`,
         '  --wait-minutes N       How long to wait for each operator action (default 10)',
@@ -213,12 +213,6 @@ async function runRemote(
   const keyPath = stringOption(values, 'key', 'conformance');
   const caPath = stringOption(values, 'ca', 'conformance');
 
-  if (caPath !== undefined && mode !== 'local') {
-    throw new UsageError(
-      '--ca is permitted only with --local: a deployed connection uses the standard public trust store',
-      'conformance',
-    );
-  }
   if (certPath === undefined || keyPath === undefined) {
     throw new UsageError(
       'remote conformance requires --cert and --key: the profile is exercised as an authenticated client',

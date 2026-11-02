@@ -532,18 +532,6 @@ describe('remote mode', () => {
     expect(io.stderr.join('\n')).toContain('--cert and --key');
   });
 
-  it('rejects --ca outside --local', async () => {
-    const { context, io } = testContext({ io: { cwd: '/w' } });
-    const code = await runCli(
-      ['conformance', 'https://csip.partner.example', '--ca', '/w/root.pem',
-        '--cert', '/w/c.pem', '--key', '/w/k.pem'],
-      context,
-      createCommands(),
-    );
-    expect(code).toBe(EXIT_USAGE);
-    expect(io.stderr.join('\n')).toContain('--ca is permitted only with --local');
-  });
-
   it('rejects a nonsensical wait', async () => {
     const { context } = testContext({ io: { cwd: '/w' } });
     const code = await runCli(
